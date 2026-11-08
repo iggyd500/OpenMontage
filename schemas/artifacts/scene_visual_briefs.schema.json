@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/scene_visual_briefs",
+  "title": "Scene Visual Briefs",
+  "description": "Concrete, narration-grounded visual search and treatment brief for each scene.",
+  "type": "object",
+  "required": ["version", "scenes"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scene_id", "narration_text", "main_subject", "visual_message", "relevant_objects", "relevant_people", "setting", "desired_action", "visual_mood", "suggested_footage_type", "search_keywords", "exclusion_keywords", "media_approach", "fallback_media"],
+        "properties": {
+          "scene_id": { "type": "string", "minLength": 1 },
+          "narration_text": { "type": "string", "minLength": 1 },
+          "main_subject": { "type": "string", "minLength": 1 },
+          "visual_message": { "type": "string", "minLength": 1 },
+          "relevant_objects": { "type": "array", "items": { "type": "string" } },
+          "relevant_people": { "type": "array", "items": { "type": "string" } },
+          "setting": { "type": "string", "minLength": 1 },
+          "desired_action": { "type": "string", "minLength": 1 },
+          "visual_mood": { "type": "string", "minLength": 1 },
+          "suggested_footage_type": { "type": "string", "enum": ["documentary_broll", "close_up_detail", "establishing_shot", "screen_content", "motion_graphics", "still_image", "mixed"] },
+          "search_keywords": { "type": "array", "minItems": 2, "maxItems": 5, "items": { "type": "string", "minLength": 8 } },
+          "exclusion_keywords": { "type": "array", "items": { "type": "string" } },
+          "media_approach": { "type": "string", "enum": ["stock_video", "stock_image", "motion_graphics", "mixed"] },
+          "fallback_media": { "type": "array", "items": { "type": "string", "enum": ["stock_video", "stock_image", "motion_graphics"] } },
+          "scene_duration_seconds": { "type": "number", "minimum": 0 },
+          "continuity_note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}

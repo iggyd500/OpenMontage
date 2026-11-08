@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/footage_selection_plan",
+  "title": "Footage Selection Plan",
+  "description": "Search provenance, candidate scores, visual review, and explicit per-scene stock selection.",
+  "type": "object",
+  "required": ["version", "scenes"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scene_id", "visual_brief", "search_queries", "candidate_count", "candidates", "selection_status", "selected_asset_id", "selected_rationale", "rejected_candidates", "no_suitable_footage"],
+        "properties": {
+          "scene_id": { "type": "string", "minLength": 1 },
+          "visual_brief": { "type": "object" },
+          "search_queries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["provider", "source", "query", "candidate_count"],
+              "properties": {
+                "provider": { "type": "string" },
+                "source": { "type": "string" },
+                "query": { "type": "string" },
+                "candidate_count": { "type": "integer", "minimum": 0 },
+                "error_category": { "type": ["string", "null"] },
+                "http_status": { "type": ["integer", "null"] },
+                "note": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "candidate_count": { "type": "integer", "minimum": 0 },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["provider", "source", "asset_id", "description", "tags", "duration_seconds", "resolution", "orientation", "download_url", "source_url", "license", "score", "score_components", "assessment_basis", "visual_review_status"],
+              "properties": {
+                "provider": { "type": "string" },
+                "source": { "type": "string" },
+                "asset_id": { "type": "string" },
+                "source_asset_id": { "type": "string" },
+                "description": { "type": ["string", "null"] },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "source_tags": { "type": "string" },
+                "duration_seconds": { "type": ["number", "null"], "minimum": 0 },
+                "resolution": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "type": "object", "required": ["width", "height"], "properties": { "width": { "type": "integer", "minimum": 1 }, "height": { "type": "integer", "minimum": 1 } }, "additionalProperties": false }
+                  ]
+                },
+                "orientation": { "type": ["string", "null"], "enum": ["portrait", "landscape", "square", null] },
+                "download_url": { "type": ["string", "null"] },
+                "source_url": { "type": ["string", "null"] },
+                "thumbnail_url": { "type": ["string", "null"] },
+                "license": { "type": ["string", "null"] },
+                "creator": { "type": ["string", "null"] },
+                "kind": { "type": "string", "enum": ["video", "image"] },
+                "query": { "type": "string" },
+                "score": { "type": "number", "minimum": 0, "maximum": 1 },
+                "score_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+                "score_components": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+                "repetition_penalty": { "type": "number", "minimum": 0, "maximum": 1 },
+                "duplicate_of_previous_selection": { "type": "boolean" },
+                "assessment_basis": { "type": "string" },
+                "visual_review_status": { "type": "string", "enum": ["not_reviewed", "visually_confirmed", "rejected"] },
+                "visual_review_notes": { "type": "string" },
+                "rejection_reason": { "type": "string" },
+                "extra": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": true
+            }
+          },
+          "selection_status": { "type": "string", "enum": ["selected", "needs_visual_review", "no_suitable_footage"] },
+          "selected_asset_id": { "type": ["string", "null"] },
+          "selected_rationale": { "type": "string" },
+          "editorial_caveats": { "type": "array", "items": { "type": "string" } },
+          "rejected_candidates": { "type": "array", "items": { "type": "object", "required": ["asset_id", "reason"], "properties": { "asset_id": { "type": "string" }, "reason": { "type": "string" } }, "additionalProperties": false } },
+          "no_suitable_footage": { "type": "boolean" },
+          "missing_reason": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}
