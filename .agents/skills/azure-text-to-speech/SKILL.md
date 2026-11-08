@@ -1,6 +1,6 @@
 ---
 name: azure-text-to-speech
-description: Generate neural narration audio using Azure AI Speech (REST text-to-speech). Use when synthesizing voiceovers or narration in OpenMontage. Optional cloud TTS provider — preferred when AZURE_SPEECH_KEY is configured; the local piper_tts remains the default offline path. Shares one Speech resource with azure_stt.
+description: Generate neural narration audio using Azure AI Speech (REST text-to-speech). Use when synthesizing voiceovers or narration in OpenMontage. Optional cloud TTS provider — preferred when AZURE_SPEECH_KEY is configured; Piper remains an optional offline alternative. Shares one Speech resource with azure_stt.
 license: MIT
 compatibility: Requires internet access and an Azure AI Speech resource (AZURE_SPEECH_KEY + AZURE_SPEECH_REGION).
 metadata: {"openclaw": {"requires": {"env": ["AZURE_SPEECH_KEY", "AZURE_SPEECH_REGION"]}, "primaryEnv": "AZURE_SPEECH_KEY"}}
@@ -14,8 +14,10 @@ SSML prosody control, and express-as styles, served synchronously by the REST
 polling). In OpenMontage this is exposed through the `azure_tts` tool
 (`capability=tts`, `provider=azure`). It is an **optional cloud TTS provider** —
 when `AZURE_SPEECH_KEY` is configured, prefer it for high-quality cloud
-narration. The local `piper_tts` remains the **default offline path** and the
-fallback when Azure is unavailable; `elevenlabs_tts` remains the choice for
+narration. The local `piper_tts` remains an **optional offline alternative**;
+`elevenlabs_tts` is the configured default direct cloud provider, while Azure
+can be selected explicitly when configured. Providers do not silently
+fall back when unavailable. `elevenlabs_tts` remains the choice for
 voice cloning.
 
 > Docs: [REST text to speech](https://learn.microsoft.com/azure/ai-services/speech-service/rest-text-to-speech) · [Voice gallery](https://speech.microsoft.com/portal/voicegallery)

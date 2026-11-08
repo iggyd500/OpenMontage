@@ -254,6 +254,8 @@ class TestSubtitleGenUnit:
             "output_path": "test_fallback.srt",
         })
         assert result.success
+        assert result.data["timing_source"] == "segment_boundaries"
+        assert "not word-synchronized" in result.data["timing_warning"]
         content = Path(result.artifacts[0]).read_text()
         assert "No word data" in content
         Path(result.artifacts[0]).unlink(missing_ok=True)

@@ -45,7 +45,7 @@ OpenMontage/
 │   ├── tool_registry.py    # Auto-discovery singleton registry
 │   ├── cost_tracker.py     # Budget governance (estimate → reserve → reconcile)
 │   ├── analysis/           # Transcription, scene detection, frame sampling, video understanding
-│   ├── audio/              # TTS (ElevenLabs, OpenAI, Piper, Azure, Google), music gen, mixing, enhancement
+│   ├── audio/              # TTS (ElevenLabs, OpenAI, Piper, VoiceStudio, Azure, Google), music gen, mixing, enhancement
 │   ├── avatar/             # Talking head animation, lip sync
 │   ├── enhancement/        # Upscale, bg removal, face enhance/restore, color grading
 │   ├── graphics/           # Image gen (FLUX, GPT Image, Recraft, local diffusion), stock, diagrams, code snippets, math animation
@@ -89,9 +89,16 @@ There is **no Python orchestrator**. The LLM agent:
 
 Python provides **tools and persistence only**. All intelligence lives in skill instructions (Markdown) and pipeline manifests (YAML).
 
-### 2. No LLM API Key in Runtime
+### 2. Agent-First Orchestration with Optional Text Drafting
 
-OpenMontage does not call LLM APIs at runtime. The coding assistant running in the user's IDE _is_ the LLM. Tools that need generation (images, video, TTS) call domain-specific APIs directly (ElevenLabs, fal.ai, HeyGen, etc.), not general-purpose LLM endpoints.
+The coding assistant running in the user's IDE remains the orchestrator and
+reviewer. OpenMontage also exposes a single `text_generation` BaseTool for
+optional research synthesis, script, storyboard, and visual-prompt drafts. Its
+provider and model come from `config.yaml`; Gemini and Ollama share one contract
+and provider failures never switch backends automatically. The tool does not
+run pipeline stages, write canonical artifacts, approve creative choices, or
+write checkpoints. Domain tools continue to handle image, video, speech, music,
+and other media generation directly through their own providers.
 
 ### 3. Dual-Provider Support
 
@@ -347,9 +354,12 @@ Each tool's `agent_skills[]` field links Layer 1 to Layers 2 and 3. For example:
 
 ```yaml
 llm:
-  provider: anthropic
+  provider: gemini
+  model: gemini-3.5-flash-lite
   temperature: 0.7
   max_tokens: 4096
+  ollama_base_url: http://localhost:11434
+  request_timeout_seconds: 120
 
 budget:
   mode: warn
@@ -393,7 +403,9 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | `HEYGEN_API_KEY` | heygen_video | Multi-provider video generation |
 | `PEXELS_API_KEY` | pexels_image, pexels_video | Stock media |
 | `PIXABAY_API_KEY` | pixabay_image, pixabay_video | Stock media |
-| `GOOGLE_API_KEY` | google_imagen, google_tts | Google Imagen images, Google Cloud TTS |
+| `GOOGLE_API_KEY` | text_generation, google_imagen, google_tts | Gemini text generation, Google image tools, Google Cloud TTS |
+| — | voicestudio_tts | Optional local VoiceStudio backend at `config.yaml:tts.voicestudio`; KittenTTS model must already be cached |
+| `OLLAMA_BASE_URL` | text_generation (optional) | Overrides the configured local Ollama endpoint; defaults to `http://localhost:11434` |
 | `RUNWAY_API_KEY` | runway_video | Runway Gen-3/Gen-4 direct |
 | `HIGGSFIELD_API_KEY` + `HIGGSFIELD_API_SECRET` | higgsfield_video | Higgsfield multi-model video |
 | `MODAL_LTX2_ENDPOINT_URL` | ltx_video_modal | Self-hosted LTX-2 |

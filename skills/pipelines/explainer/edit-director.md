@@ -16,6 +16,37 @@ This is where raw assets become a coherent video. Good editing makes average ass
 
 ## Process
 
+### Stage 3C: Build a Scene Composition Plan
+
+For every approved `footage_selection_plan` scene, create a matching
+`composition_plan` entry before composing. Keep Codex as the creative
+orchestrator; `composition_quality` is a deterministic technical reporter and
+does not choose footage or approve aesthetics.
+
+- Record the approved asset, its probed dimensions/duration, timeline, focal
+  point, protected subject/object regions, crop mode, restrained motion,
+  sparse graphic placements, transition, subtitle safe area, continuity motif,
+  and coverage status.
+- Prefer portrait sources. For landscape clips, compute the 9:16 cover window
+  around the subject; if faces, hands, or key objects do not fit, use
+  `contain_blur` or mark the crop for human review. Never silently replace an
+  approved asset.
+- Animate stills with slow zooms or pans at 3–6% intensity. A single flat image
+  does not provide true parallax; report that limitation instead of claiming it.
+- Use graphics only when they clarify the narration. Keep them out of protected
+  subject regions and the caption safe area; favor one short phrase or label
+  over a paragraph. Motion graphics may supplement, but not falsely imply,
+  unsupported facts.
+- Vary cuts, fades, crossfades, directional moves, and wipes only when the
+  story supports them. Ensure durations fit the narration and avoid mechanical
+  repetition.
+- Include an explicit coverage note for every scene. Partial/insufficient
+  visuals remain warnings; do not call the scene fully supported because an
+  overlay was added.
+- Run registered `composition_quality` on the plan. Resolve technical errors;
+  present warnings and previews for human review. Never claim automatic visual
+  approval.
+
 ### Step 1: Map Assets to Timeline
 
 For each scene in the scene plan:

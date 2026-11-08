@@ -38,11 +38,63 @@
                   "x": { "type": "number" },
                   "y": { "type": "number" },
                   "width": { "type": "number" },
-                  "height": { "type": "number" }
+                  "height": { "type": "number" },
+                  "mode": { "type": "string", "enum": ["cover", "contain", "contain_blur"] },
+                  "source_width": { "type": "integer", "minimum": 1 },
+                  "source_height": { "type": "integer", "minimum": 1 },
+                  "focal_point": {
+                    "type": "object",
+                    "required": ["x", "y"],
+                    "properties": {
+                      "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "y": { "type": "number", "minimum": 0, "maximum": 1 }
+                    },
+                    "additionalProperties": false
+                  }
                 }
-              }
+              },
+              "motion_intensity": { "type": "number", "minimum": 0, "maximum": 0.12 }
             },
             "additionalProperties": false
+          },
+          "graphics": {
+            "type": "array",
+            "description": "Scene-local Remotion title/stat/key-phrase/callout graphics, positioned in normalized canvas coordinates.",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "text", "region"],
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "type": "string", "enum": ["section_label", "stat", "key_phrase", "callout", "icon_label", "mini_diagram"] },
+                "text": { "type": "string" },
+                "secondary_text": { "type": "string" },
+                "icon": { "type": "string" },
+                "region": {
+                  "type": "object",
+                  "required": ["x", "y", "width", "height"],
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                    "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+                  },
+                  "additionalProperties": false
+                },
+                "target": {
+                  "type": "object",
+                  "required": ["x", "y"],
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 1 }
+                  },
+                  "additionalProperties": false
+                },
+                "start_seconds": { "type": "number", "minimum": 0 },
+                "end_seconds": { "type": "number", "minimum": 0 },
+                "accent_color": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
           },
           "transition_in": {
             "type": "string",

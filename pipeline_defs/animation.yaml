@@ -66,7 +66,7 @@ stages:
     skill: pipelines/animation/research-director
     produces:
       - research_brief
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: false
     human_approval_default: false
     review_focus:
@@ -131,6 +131,7 @@ stages:
     optional_tools:
       - transcriber
     tools_available:
+      - text_generation
       - transcriber
     checkpoint_required: true
     human_approval_default: true
@@ -154,7 +155,7 @@ stages:
       - proposal_packet
     produces:
       - scene_plan
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -190,6 +191,7 @@ stages:
       - music_gen
       - fal_elevenlabs_music
     tools_available:
+      - text_generation
       - tts_selector
       - image_selector
       - video_selector

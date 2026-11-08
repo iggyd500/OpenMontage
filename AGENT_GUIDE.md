@@ -87,6 +87,28 @@ Core loop:
 4. Present the user with concepts, tool plan, production plan, and cost.
 5. Execute stage by stage with checkpoints.
 
+### Configured Text Generation
+
+`text_generation` is the shared, config-selected drafting capability for research
+synthesis, scripts, storyboards, and visual prompts. Before using it, read
+[`skills/core/text-generation.md`](skills/core/text-generation.md) and confirm the
+current stage lists `text_generation` in its `tools_available` (or the registry
+reports it available). It uses only `config.yaml` → `llm.provider` and
+`llm.model`: Gemini is the default; Ollama must be selected explicitly. Never
+switch providers after an error without the user's approval.
+
+The configured model may prepare a draft from the supplied task, instructions,
+and source context. The Codex agent remains responsible for source gathering,
+fact checking, creative decisions, artifact construction and schema validation,
+quality review, checkpoint writes, and approvals. For factual research, use the
+configured search/fetch tools first and pass the retrieved sources into
+`source_context`; do not present ungrounded model output as researched fact.
+
+Use this capability in research/research-brief stages, script stages,
+scene-plan/storyboard stages, and asset-stage visual prompt drafting when the
+manifest exposes it. Treat the result as draft material, not a canonical
+artifact: the Codex agent validates and writes the final project artifact.
+
 ## Decision Communication Contract
 
 For any meaningful production decision, the agent must communicate the decision before acting. The user should never have to infer which provider, model, or render path was chosen after the fact.

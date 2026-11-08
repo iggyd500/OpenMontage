@@ -2,9 +2,14 @@
 
 ## When to Use
 
-Use the `subtitle_gen` tool to convert transcript data (from `transcriber`)
-into properly timed subtitle files. This skill covers timing strategy,
-formatting, and readability for both vertical and horizontal video.
+Use `subtitle_gen` to format actual word-level timestamps as subtitles. For
+new ElevenLabs narration, request `timestamps: true` from `tts_selector`; its
+`/with-timestamps` result includes character alignment, converted word times,
+and an `<audio>.alignment.json` sidecar. For an existing recording without a
+sidecar, use the registered `elevenlabs_forced_alignment` tool with the exact
+script and audio. That endpoint consumes Speech-to-Text minutes. The local
+`transcriber` is an ASR tool that can timestamp its recognized words; it is
+not forced alignment against a supplied script.
 
 ## Tool
 
@@ -90,8 +95,63 @@ alignment: 2
 ### Word Boundary Grouping
 
 The `subtitle_gen` tool groups words respecting `max_words_per_cue` and
-`max_chars_per_line`. When word timestamps are unavailable, it falls back
-to segment-level timing with even distribution.
+`max_chars_per_line`, preserves punctuation, and ends cues at sentence
+boundaries when practical. For production subtitles, pass segments containing
+`words` and set `require_word_timestamps: true` plus
+`audio_duration_seconds`. The strict mode rejects missing, invalid,
+non-chronological, negative, or out-of-audio timings instead of emitting
+segment-only cues. The default permissive mode remains for legacy workflows;
+its segment-only times are coarse segment boundaries and must not be called
+word alignment.
+
+Example input shape:
+
+```json
+{
+  "segments": [{"words": [
+    {"word": "Hello,", "start": 0.12, "end": 0.48},
+    {"word": "world!", "start": 0.51, "end": 0.91}
+  ]}],
+  "require_word_timestamps": true,
+  "audio_duration_seconds": 1.0
+}
+```
+
+SRT remains compatible with FFmpeg burn-in. `format: "json"` also emits a
+`captions` array using Remotion's `{word, startMs, endMs}` word-caption
+contract; pass that array as the composition `captions` prop. No estimated
+fallback is allowed after a requested alignment operation fails: stop, report
+the failure, and correct the alignment input or explicitly choose a separately
+approved ASR/realignment path.
+
+## Alignment quality report
+
+`elevenlabs_forced_alignment` writes the parsed provider response (including
+`raw_api_response`) plus a separate `.quality.json` report. The report includes
+word coverage, timestamp errors, overall and maximum per-word loss, the ten
+highest numeric-loss entries, and bottom/top duration-decile review candidates.
+It never drops or retimes a questionable word. The relative loss list is not an
+absolute confidence classification, and duration deciles are review heuristics.
+
+ElevenLabs describes overall `loss` as the average alignment loss/confidence
+score over characters and returns per-word loss values, but publishes no score
+range, direction, or acceptance threshold. Read the largest values as
+comparative review candidates only. The quality report therefore defaults to
+`human_review_required` and `subtitles_fully_validated: false`; a complete word
+match alone does not mark the audio reviewed. Missing words or invalid times
+set `quality_status: "blocked"` and must stop subtitle production.
+
+## Troubleshooting
+
+- `elevenlabs_forced_alignment` status confirms only that the key is configured
+  and `ffprobe` is present; it cannot check endpoint permissions offline.
+- HTTP 401 mentioning the `forced_alignment` permission means the key is
+  configured but lacks access to that endpoint. TTS access can still work.
+  Do not retry or fall back to estimated cues; enable the permission through
+  the provider's key settings, or explicitly choose another alignment method.
+- A provider alignment error should be reported as a blocker. Strict
+  `subtitle_gen` mode rejects absent, malformed, non-chronological, negative,
+  or out-of-duration word timings.
 
 ## Quality Checklist
 

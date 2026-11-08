@@ -63,7 +63,7 @@ stages:
     skill: pipelines/character-animation/research-director
     produces:
       - research_brief
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: false
     human_approval_default: false
     review_focus:
@@ -120,6 +120,7 @@ stages:
     produces:
       - script
     tools_available:
+      - text_generation
       - transcriber
     checkpoint_required: true
     human_approval_default: true
@@ -183,7 +184,7 @@ stages:
       - proposal_packet
     produces:
       - scene_plan
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -207,6 +208,7 @@ stages:
     produces:
       - asset_manifest
     tools_available:
+      - text_generation
       - image_selector
       - tts_selector
       - music_gen

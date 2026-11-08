@@ -132,6 +132,19 @@ class TTSSelector(BaseTool):
                 "default": False,
                 "description": "Request word timestamps when the selected provider supports them.",
             },
+            "with_timestamps": {
+                "type": "boolean",
+                "description": "Provider-native alias for requesting word timestamps.",
+            },
+            "use_speaker_boost": {"type": "boolean"},
+            "previous_text": {"type": "string"},
+            "next_text": {"type": "string"},
+            "previous_request_ids": {
+                "type": "array", "items": {"type": "string"}, "maxItems": 3
+            },
+            "next_request_ids": {
+                "type": "array", "items": {"type": "string"}, "maxItems": 3
+            },
             "apply_text_normalization": {
                 "type": "string",
                 "enum": ["auto", "on", "off"],
@@ -157,7 +170,6 @@ class TTSSelector(BaseTool):
             "preferred_provider": {
                 "type": "string",
                 "description": "Provider name or 'auto'. Valid values are discovered at runtime from the registry.",
-                "default": "auto",
             },
             "allowed_providers": {
                 "type": "array",
@@ -231,10 +243,62 @@ class TTSSelector(BaseTool):
         # Normal generation — use scored selection
         tool, score = self._select_best_tool(inputs, candidates, task_context)
         if tool is None:
-            return ToolResult(success=False, error="No TTS provider available.")
+            selected_tool = inputs.get("preferred_tool")
+            selected_provider = inputs.get("preferred_provider")
+            if selected_tool == "voicestudio_tts" or selected_provider == "voicestudio":
+                error = (
+                    "VoiceStudio is unavailable. Ensure its local backend is running "
+                    "at the configured endpoint; no provider fallback was attempted."
+                )
+            elif selected_tool:
+                error = (
+                    f"Selected TTS tool '{selected_tool}' is unavailable or not registered; "
+                    "no provider fallback was attempted."
+                )
+            elif selected_provider and selected_provider != "auto":
+                error = (
+                    f"Selected TTS provider '{selected_provider}' is unavailable; "
+                    "no provider fallback was attempted."
+                )
+            else:
+                try:
+                    from lib.config_model import OpenMontageConfig
+
+                    configured_provider = OpenMontageConfig.load().tts.provider
+                except Exception:
+                    configured_provider = "configured"
+                if configured_provider == "voicestudio":
+                    error = (
+                        "VoiceStudio is unavailable. Ensure its local backend is running "
+                        "at the configured endpoint; no provider fallback was attempted."
+                    )
+                else:
+                    error = (
+                        f"Configured TTS provider '{configured_provider}' is unavailable; "
+                        "select another provider explicitly to use it."
+                    )
+            return ToolResult(success=False, error=error)
+
+        provider_inputs = dict(inputs)
+        if tool.name == "elevenlabs_tts":
+            from lib.config_model import OpenMontageConfig
+
+            defaults = OpenMontageConfig.load().tts.elevenlabs
+            for name, value in (
+                ("model_id", defaults.model_id),
+                ("voice_id", defaults.voice_id),
+                ("language", defaults.language),
+                ("output_format", defaults.output_format),
+            ):
+                provider_inputs.setdefault(name, value)
+            if (
+                "voice_name" not in provider_inputs
+                and provider_inputs.get("voice_id") == defaults.voice_id
+            ):
+                provider_inputs["voice_name"] = defaults.voice_name
 
         try:
-            adapted = self._adapt_inputs(tool, inputs)
+            adapted = self._adapt_inputs(tool, provider_inputs)
         except (ValueError, TypeError) as exc:
             return ToolResult(success=False, error=str(exc))
         result = tool.execute(adapted)
@@ -264,6 +328,16 @@ class TTSSelector(BaseTool):
                 raise ValueError("model and model_id disagree")
             adapted["model_id"] = inputs["model"]
             adapted.pop("model", None)
+        if tool.name == "elevenlabs_tts":
+            if inputs.get("timestamps") is not None:
+                if (
+                    inputs.get("with_timestamps") is not None
+                    and bool(inputs["timestamps"])
+                    != bool(inputs["with_timestamps"])
+                ):
+                    raise ValueError("timestamps and with_timestamps disagree")
+                adapted["with_timestamps"] = bool(inputs["timestamps"])
+            adapted.pop("timestamps", None)
         if tool.name not in {"azure_tts", "mai_tts"}:
             return adapted
 
@@ -303,10 +377,28 @@ class TTSSelector(BaseTool):
         from tools.provider_routing import filter_explicit_route
 
         candidates = filter_explicit_route(inputs, candidates)
-        preferred = inputs.get("preferred_provider", "auto")
+        preferred_tool = inputs.get("preferred_tool")
+        preferred = inputs.get("preferred_provider")
+        if preferred_tool:
+            # preferred_tool is the most specific route. It must not be
+            # narrowed by the configured default provider.
+            if preferred not in (None, "auto"):
+                candidates = [tool for tool in candidates if tool.provider == preferred]
+        elif preferred is None:
+            # Omitted provider selection uses the typed TTS configuration.
+            # Passing preferred_provider="auto" explicitly opts into scored
+            # selection; a configured provider is otherwise strict and never
+            # silently falls through to another vendor.
+            from lib.config_model import OpenMontageConfig
+
+            preferred = OpenMontageConfig.load().tts.provider
+
         allowed = set(inputs.get("allowed_providers") or [])
         if allowed:
             candidates = [tool for tool in candidates if tool.provider in allowed]
+
+        if not preferred_tool and preferred not in (None, "auto"):
+            candidates = [tool for tool in candidates if tool.provider == preferred]
 
         rankings = rank_providers(candidates, task_context)
 

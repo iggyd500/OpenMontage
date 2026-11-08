@@ -33,6 +33,8 @@ This prevents the most expensive mistake: generating 10+ dubbed assets in a dire
 
 Use the approved translated script package, not raw machine output. Record which voice or synthesis path was used for each language.
 
+Route all speech through `tts_selector` and preserve the selected provider explicitly. The configured English narration default is direct `elevenlabs_tts`, `eleven_multilingual_v2`, Brian (`nPczCjzI2devNBz1zQrb`), with WAV 44.1 kHz output. Piper remains the local offline option; VoiceStudio KittenTTS can be selected with `preferred_tool: "voicestudio_tts"` and Jasper (`expr-voice-2-m`). VoiceStudio requires its backend and model cache to be ready, supports English WAV output, and serializes requests. It will not launch the backend, download weights, or fall through to another provider if unavailable. Choose Google TTS or another supported provider explicitly for other languages.
+
 ### 3. Treat Lip Sync As Optional
 
 Only generate lip-sync assets for scenes and languages that actually need it. If the tool path is blocked, record that and keep the dub-audio path alive.

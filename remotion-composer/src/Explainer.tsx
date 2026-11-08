@@ -9,6 +9,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { Fragment } from "react";
 import { loadSpaceGrotesk } from "./lib/localFonts";
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
@@ -248,6 +249,16 @@ interface Cut {
     scale?: number;
     position?: string | { x: number; y: number };
   };
+  crop?: {
+    mode?: "cover" | "contain" | "contain_blur";
+    focal_point?: { x: number; y: number };
+    source_width?: number;
+    source_height?: number;
+    /** Optional enlargement for contained landscape footage; 1 preserves the source framing. */
+    scale?: number;
+  };
+  motion_intensity?: number;
+  graphics?: SceneGraphic[];
   // Anime scene props (type: "anime_scene")
   images?: string[];
   particles?: ParticleType;
@@ -265,6 +276,19 @@ interface Cut {
   screenshotSteps?: ScreenshotStep[];
   screenshotSize?: { width: number; height: number };
   cursorStartAt?: [number, number];
+}
+
+interface SceneGraphic {
+  id: string;
+  kind: "section_label" | "stat" | "key_phrase" | "callout" | "icon_label" | "mini_diagram";
+  text: string;
+  secondary_text?: string;
+  icon?: string;
+  region: { x: number; y: number; width: number; height: number };
+  target?: { x: number; y: number };
+  start_seconds?: number;
+  end_seconds?: number;
+  accent_color?: string;
 }
 
 interface Overlay {
@@ -342,12 +366,31 @@ const Vignette: React.FC = () => (
 // Enhanced Image Scene — spring physics, parallax, variety
 // ---------------------------------------------------------------------------
 
-const ImageScene: React.FC<{ src: string; animation?: string }> = ({
+const getObjectPosition = (crop: Cut["crop"], targetWidth: number, targetHeight: number): string => {
+  const focal = crop?.focal_point || { x: 0.5, y: 0.5 };
+  const sw = crop?.source_width;
+  const sh = crop?.source_height;
+  if (!sw || !sh) return `${focal.x * 100}% ${focal.y * 100}%`;
+  const sourceRatio = sw / sh;
+  const targetRatio = targetWidth / targetHeight;
+  if (sourceRatio > targetRatio) {
+    const visible = targetRatio / sourceRatio;
+    const left = Math.max(0, Math.min(1 - visible, focal.x - visible / 2));
+    return `${(left / (1 - visible)) * 100}% 50%`;
+  }
+  const visible = sourceRatio / targetRatio;
+  const top = Math.max(0, Math.min(1 - visible, focal.y - visible / 2));
+  return `50% ${(top / (1 - visible)) * 100}%`;
+};
+
+const ImageScene: React.FC<{ src: string; animation?: string; crop?: Cut["crop"]; intensity?: number }> = ({
   src,
   animation,
+  crop,
+  intensity,
 }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
 
   // Smooth spring fade-in
   const fadeIn = spring({ frame, fps, config: { damping: 18, stiffness: 80 } });
@@ -370,10 +413,13 @@ const ImageScene: React.FC<{ src: string; animation?: string }> = ({
     extrapolateRight: "clamp",
   });
 
-  if (anim === "zoom-in") {
-    scale = 1 + progress * 0.18;
+  const restrained = intensity ?? 0.05;
+  if (anim === "zoom-in" || anim === "slow_zoom_in") {
+    scale = 1 + progress * (intensity === undefined ? 0.18 : restrained);
   } else if (anim === "zoom-out") {
     scale = 1.18 - progress * 0.18;
+  } else if (anim === "slow_zoom_out") {
+    scale = 1 + restrained * (1 - progress);
   } else if (anim === "pan-left") {
     translateX = interpolate(progress, [0, 1], [40, -40]);
     scale = 1.15;
@@ -390,16 +436,22 @@ const ImageScene: React.FC<{ src: string; animation?: string }> = ({
     translateY = interpolate(progress, [0, 1], [15, -15]);
     scale = 1.1;
   }
+  if (anim === "pan_left") translateX = interpolate(progress, [0, 1], [restrained * 500, -restrained * 500]);
+  if (anim === "pan_right") translateX = interpolate(progress, [0, 1], [-restrained * 500, restrained * 500]);
   // "static" or "none" → just display
 
+  const mode = crop?.mode || "cover";
+  const fit = mode === "contain" || mode === "contain_blur" ? "contain" : "cover";
   return (
     <AbsoluteFill style={{ overflow: "hidden", background: "#0F172A" }}>
+      {mode === "contain_blur" && <Img src={resolveAsset(src)} style={{ position: "absolute", width: "100%", height: "100%", objectFit: "cover", filter: "blur(28px) brightness(0.42)", transform: "scale(1.08)" }} />}
       <Img
         src={resolveAsset(src)}
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "cover",
+          objectFit: fit,
+          objectPosition: getObjectPosition(crop, width, height),
           opacity: fadeIn * fadeOut,
           transform: `scale(${scale}) translate(${translateX}px, ${translateY}px)`,
           willChange: "transform, opacity",
@@ -422,6 +474,8 @@ const VideoScene: React.FC<{
   transitionDuration?: number;
   sceneDurationSeconds: number;
   backgroundColor?: string;
+  crop?: Cut["crop"];
+  transitionStyle?: string;
 }> = ({
   src,
   startFrom = 0,
@@ -430,9 +484,11 @@ const VideoScene: React.FC<{
   transitionDuration,
   sceneDurationSeconds,
   backgroundColor = "#0F172A",
+  crop,
+  transitionStyle,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
   const durationInFrames = Math.max(1, Math.round(sceneDurationSeconds * fps));
 
   const hardIn = ["cut", "none"].includes((transitionIn || "").toLowerCase());
@@ -455,22 +511,76 @@ const VideoScene: React.FC<{
         extrapolateRight: "clamp",
       });
 
+  const mode = crop?.mode || "cover";
+  const fit = mode === "contain" || mode === "contain_blur" ? "contain" : "cover";
+  const mediaScale = crop?.scale ?? 1;
+  const focal = crop?.focal_point || { x: 0.5, y: 0.5 };
+  // Translate only the incremental zoom so scale=1 preserves all existing layouts.
+  const zoomX = (0.5 - focal.x) * (mediaScale - 1) * 100;
+  const zoomY = (0.5 - focal.y) * (mediaScale - 1) * 100;
+  const zoomTransform = mediaScale === 1 ? "" : ` translate(${zoomX}%, ${zoomY}%) scale(${mediaScale})`;
+  const transition = (transitionStyle || transitionIn || "").toLowerCase();
+  const progress = Math.max(0, Math.min(1, frame / transitionFrames));
+  const slideX = transition === "slide_left" ? (1 - progress) * 100 : transition === "slide_right" ? -(1 - progress) * 100 : 0;
+  const clipPath = transition === "wipe_left" ? `inset(0 ${(1 - progress) * 100}% 0 0)` : transition === "wipe_right" ? `inset(0 0 0 ${(1 - progress) * 100}%)` : undefined;
   return (
-    <AbsoluteFill style={{ background: backgroundColor }}>
+    <AbsoluteFill style={{ background: backgroundColor, overflow: mediaScale > 1 ? "hidden" : undefined }}>
+      {mode === "contain_blur" && <OffthreadVideo src={resolveAsset(src)} startFrom={Math.round(startFrom * fps)} style={{ position: "absolute", width: "100%", height: "100%", objectFit: "cover", filter: "blur(28px) brightness(0.42)", transform: "scale(1.08)" }} muted />}
       <OffthreadVideo
         src={resolveAsset(src)}
         startFrom={Math.round(startFrom * fps)}
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "cover",
+          objectFit: fit,
+          objectPosition: getObjectPosition(crop, width, height),
           opacity: fadeIn * fadeOut,
+          transform: `translateX(${slideX}%)${zoomTransform}`,
+          clipPath,
         }}
         muted
       />
       <Vignette />
     </AbsoluteFill>
   );
+};
+
+const SceneGraphics: React.FC<{ items?: SceneGraphic[]; sceneStart: number; accent: string }> = ({ items, sceneStart, accent }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  if (!items?.length) return null;
+  return <AbsoluteFill style={{ pointerEvents: "none" }}>
+    {items.map((item) => {
+      const localStart = Math.max(0, ((item.start_seconds ?? sceneStart) - sceneStart) * fps);
+      const localEnd = item.end_seconds === undefined ? Infinity : (item.end_seconds - sceneStart) * fps;
+      const progress = Math.max(0, Math.min(1, (frame - localStart) / 10));
+      const visible = frame >= localStart && frame <= localEnd;
+      const region = item.region;
+      return <Fragment key={item.id}>
+        {item.kind === "callout" && item.target && <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: visible ? progress : 0 }} viewBox="0 0 1000 1000" preserveAspectRatio="none">
+          <line x1={(region.x + region.width / 2) * 1000} y1={(region.y + region.height) * 1000} x2={item.target.x * 1000} y2={item.target.y * 1000} stroke={item.accent_color || accent} strokeWidth="3" />
+          <circle cx={item.target.x * 1000} cy={item.target.y * 1000} r="9" fill={item.accent_color || accent} />
+        </svg>}
+        <div style={{ position: "absolute", left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%`, boxSizing: "border-box", padding: "14px 18px", borderLeft: item.kind === "section_label" ? `4px solid ${item.accent_color || accent}` : undefined, borderRadius: 12, background: item.kind === "stat" || item.kind === "callout" ? "rgba(8, 14, 25, .72)" : "rgba(8, 14, 25, .42)", color: "#fff", opacity: visible ? progress : 0, transform: `translateY(${(1-progress)*12}px)`, fontFamily: "inherit", textShadow: "0 2px 10px rgba(0,0,0,.55)", display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
+          {item.icon && <span style={{ fontSize: 30 }}>{item.icon}</span>}
+          <span style={{ fontWeight: item.kind === "stat" ? 800 : 700, fontSize: item.kind === "stat" ? "clamp(30px, 5vw, 74px)" : "clamp(18px, 2.8vw, 42px)", lineHeight: 1.08 }}>{item.text}</span>
+          {item.secondary_text && <span style={{ marginTop: 8, fontSize: "clamp(14px, 1.8vw, 24px)", opacity: .84 }}>{item.secondary_text}</span>}
+        </div>
+      </Fragment>;
+    })}
+  </AbsoluteFill>;
+};
+
+const SceneTransition: React.FC<{ type?: string; seconds?: number; children: React.ReactNode }> = ({ type = "cut", seconds = 0.4, children }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const frames = Math.max(1, seconds * fps);
+  const p = Math.max(0, Math.min(1, frame / frames));
+  const style = type.toLowerCase();
+  const x = style === "slide_left" ? (1 - p) * 100 : style === "slide_right" ? -(1 - p) * 100 : 0;
+  const clipPath = style === "wipe_left" ? `inset(0 ${(1-p)*100}% 0 0)` : style === "wipe_right" ? `inset(0 0 0 ${(1-p)*100}%)` : undefined;
+  const opacity = ["cut", "none"].includes(style) ? 1 : style === "fade" || style === "crossfade" ? p : 1;
+  return <AbsoluteFill style={{ opacity, transform: `translateX(${x}%)`, clipPath }}>{children}</AbsoluteFill>;
 };
 
 // ---------------------------------------------------------------------------
@@ -745,26 +855,41 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
   const animation = cut.animation || cut.transform?.animation;
 
   if (cut.source && isImage(cut.source)) {
-    return maybeWrapWithBg(<ImageScene src={cut.source} animation={animation} />);
+    return maybeWrapWithBg(<>
+      <SceneTransition type={cut.transition_in} seconds={cut.transition_duration}>
+        <ImageScene src={cut.source} animation={animation} crop={cut.crop} intensity={cut.motion_intensity} />
+        <SceneGraphics items={cut.graphics} sceneStart={cut.in_seconds} accent={accent} />
+      </SceneTransition>
+    </>);
   }
 
   if (cut.source && isVideo(cut.source)) {
     return maybeWrapWithBg(
-      <VideoScene
-        src={cut.source}
-        startFrom={cut.source_in_seconds ?? 0}
-        transitionIn={cut.transition_in}
-        transitionOut={cut.transition_out}
-        transitionDuration={cut.transition_duration}
-        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
-        backgroundColor={cut.backgroundColor}
-      />,
+      <>
+        <VideoScene
+          src={cut.source}
+          startFrom={cut.source_in_seconds ?? 0}
+          transitionIn={cut.transition_in}
+          transitionOut={cut.transition_out}
+          transitionDuration={cut.transition_duration}
+          sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+          backgroundColor={cut.backgroundColor}
+          crop={cut.crop}
+          transitionStyle={cut.transition_in}
+        />
+        <SceneGraphics items={cut.graphics} sceneStart={cut.in_seconds} accent={accent} />
+      </>,
     );
   }
 
   // Final fallback — try as image if source exists, otherwise show text_card
   if (cut.source) {
-    return maybeWrapWithBg(<ImageScene src={cut.source} animation={animation} />);
+    return maybeWrapWithBg(<>
+      <SceneTransition type={cut.transition_in} seconds={cut.transition_duration}>
+        <ImageScene src={cut.source} animation={animation} crop={cut.crop} intensity={cut.motion_intensity} />
+        <SceneGraphics items={cut.graphics} sceneStart={cut.in_seconds} accent={accent} />
+      </SceneTransition>
+    </>);
   }
 
   // No source, no type — render as text card with cut id as fallback

@@ -29,7 +29,7 @@ Quick routing for common explainer needs:
 | Layer | Resource | Purpose |
 |-------|----------|---------|
 | Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | What to produce |
+| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["scene_visual_briefs"]["scene_visual_briefs"]`, `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | What to produce |
 | Playbook | Active style playbook | Image prompts, diagram style, audio preferences |
 | Tools | `tts_selector`, `image_selector`, `video_selector`, `diagram_gen`, `code_snippet`, `music_gen` — selectors auto-discover all available providers from the registry | Generation capabilities |
 | Cost tracker | `tools/cost_tracker.py` | Budget governance |
@@ -70,7 +70,7 @@ Before generating anything:
 
 Before batch-generating assets, produce one sample of each expensive asset type and present them to the user for approval:
 
-1. **TTS sample**: Generate narration for `script.voice_performance.sample_section_id` when present; otherwise pick the section with the most demanding delivery. Play it for the user. Confirm voice, pace, pauses, emphasis, and tone are acceptable before generating the rest.
+1. **TTS sample**: Generate narration for `script.voice_performance.sample_section_id` when present; otherwise pick the section with the most demanding delivery. Play it for the user and obtain explicit human approval for voice, pace, pauses, emphasis, and tone before generating the rest. Keep the selected provider, model, voice ID, and expressive settings fixed across all sections. If direct ElevenLabs was selected, call `tts_selector` with `preferred_tool: "elevenlabs_tts"`; do not route that request through fal.ai or another provider.
 2. **Image sample**: Generate one image for the most representative scene. Show it to the user. Confirm the style, quality, and prompt approach before batch-generating all images.
 3. **Music sample** (if using `music_gen`): Generate one short clip. Confirm mood and energy before committing.
 
@@ -94,7 +94,7 @@ For each script section:
    - Google TTS: `input_type: "ssml"` when using `<break>` tags, plus `speaking_rate` in `0.25..2.0` and `pitch` in `-20..20`
    - ElevenLabs: `stability`, `similarity_boost`, `style`, `speed`, and `use_speaker_boost`
    - Azure: voice aliases (`andrew`, `brandon`, `ava`, `guy`, `jenny`) or any Azure short name, SSML `rate` (e.g. `"-4%"`), `pitch` (e.g. `"+1st"`), and `style` (e.g. `"narration-professional"`) — see the `azure-text-to-speech` skill
-7. Generate using `tts_selector` — it auto-routes to the best available TTS provider based on user preference and availability. Check the registry's `best_for` fields to understand each provider's strengths.
+7. Generate using `tts_selector` with the approved provider/model choice. The configured default is direct `elevenlabs_tts` with `eleven_multilingual_v2` and Brian (`nPczCjzI2devNBz1zQrb`); use `wav_44100` for local PCM WAV output. For this direct ElevenLabs route, pass `timestamps: true` so word timings and the `<audio>.alignment.json` sidecar are returned with the generated audio. Keep the sidecar with the narration asset and record its path in the asset manifest. Honor explicit `preferred_tool` or `preferred_provider`; if that route fails or becomes unavailable, stop and report the failure instead of silently switching. Piper remains the local offline option, and `voicestudio_tts` remains selectable when explicitly chosen. For VoiceStudio, use the cached `kittentts` model and keep its single-request serialization; Jasper is preset `expr-voice-2-m`. `fal_elevenlabs_tts` is separate and must be used only when explicitly selected. Do not launch VoiceStudio or request model downloads through OpenMontage.
 8. Record the applied `voice_performance` metadata on each narration asset
 9. Verify the audio file exists and duration matches expected timing (±15%)
 
@@ -104,7 +104,50 @@ For each script section:
 or ignores intended pauses, do not batch the remaining sections. Revise the
 `voice_performance` plan or provider parameters and regenerate the sample.
 
-### Step 4: Generate Visual Assets
+### Step 4: Discover, Evaluate, and Select Stock Footage
+
+For each scene, use its structured visual brief and follow this source order:
+
+1. `stock_candidate_search` with `source: "pixabay_video"` and one concrete
+   search phrase at a time. Keep requests small (normally 5–8 results). This is
+   metadata-only; it does not download results.
+2. Run `stock_candidate_ranker` against the scene brief. Keep each score and
+   component explanation. The score is a metadata proxy, not proof of what the
+   footage depicts. If Pixabay returns no useful candidates, search another
+   available video source (`coverr`, `archive_org`, `wikimedia`, `nasa`,
+   `nara`, `pond5_pd`, or `loc`) explicitly; do not fan out every query to every
+   provider.
+3. Use `stock_candidate_preview` on only the top one or two candidates to save
+   small thumbnails in the project; inspect them visually. If a thumbnail
+   cannot establish whether the action supports the narration, download one
+   leading candidate into a temporary project-local path and inspect
+   representative frames before final approval. Do not label metadata-only
+   ranking as visual AI analysis. The local `video_understand` model is
+   optional and may require large dependencies/model weights; do not install or
+   download it as part of ordinary production.
+4. Call `stock_candidate_ranker` again with `approved_asset_id` only after the
+   visual review. Then use `stock_candidate_download` for that one candidate,
+   saving it under `projects/<project>/assets/`. Search URLs may expire, so
+   download the reviewed choice promptly. Never download every search result.
+5. Avoid reusing an asset ID or source URL. Consider tag overlap with prior
+   selected clips as a repetition penalty. If no candidate visibly supports the
+   scene, search a stock image source and then prefer a relevant still/motion
+   graphic. Report a gap instead of forcing a weak clip.
+
+The ranker's transparent score uses metadata keyword relevance (30%), subject
+and object match (15%), action match (15%), setting match (10%), resolution
+(15%), aspect ratio (10%), and duration suitability (5%), less a separately
+reported repetition penalty. It returns all components; it does not define a
+universal pass threshold or select without explicit approval. Review the target
+crop (especially 9:16) and whether the clip has enough usable duration.
+
+Record search queries, all shortlisted candidate metadata, scores, selection
+rationale, rejected candidates and reasons, any fallback searches, and missing
+footage in `projects/<project>/artifacts/footage_selection_plan.json`. Preserve
+provider-supplied licence metadata verbatim; if none is supplied, mark it
+unknown and verify the source page rather than guessing.
+
+### Step 4b: Generate Other Visual Assets
 
 Process asset tasks grouped by tool for efficiency:
 
@@ -257,6 +300,8 @@ the AI model's training data — it may be wrong or outdated.
 - **Inconsistent image style**: Each image_selector call is independent. Use consistent anchors, but adapt them per scene. If you paste the same style prefix into every prompt, the video will feel machine-made and repetitive.
 - **Ignoring narration timing**: If TTS produces 12s of audio for a 10s section, the edit phase will struggle. Check durations.
 - **Ignoring delivery cues**: Generating raw script text when `provider_text` or `delivery_cues` exist will flatten the read. Apply the voice-performance contract first.
+- **Inconsistent narration or caption timing**: Keep the same voice ID, model, stability, similarity, style, speed, and speaker-boost setting across sections. For direct ElevenLabs word alignment, pass `timestamps: true` through `tts_selector`; preserve the returned alignment sidecar and word timestamps. Times are local to each audio section, so add that section's timeline offset before building full-video captions. Use request stitching only for supported models, carrying request IDs forward in section order; do not request stitching for v3 or v4 Turbo.
+- **Missing narration alignment sidecar**: Do not distribute segment duration across words or label estimated captions as aligned. For an existing audio file without synthesis timestamps, call `elevenlabs_forced_alignment` with the audio and exact script; it uses ElevenLabs Speech-to-Text minutes. If it fails, stop and report the blocker. `transcriber` is ASR, not exact-script forced alignment, and any ASR text must be compared with the approved script before captioning.
 - **Missing pronunciation guide**: "PostgreSQL" or "Kubernetes" will be mispronounced without explicit guidance.
 - **One retry then give up**: If an image doesn't match, refine the prompt specifically — don't just retry the same prompt.
 - **AI-generating images with exact text (CTA, business names, contact info)**: AI image models frequently hallucinate wrong text — wrong business name, wrong phone number, misspelled words. **Never use AI image generation for scenes where text must be verbatim.** Use Remotion `text_card` type instead. This applies to: CTA screens, title cards with business names, contact info overlays, legal disclaimers. If a scene's `type` is `text_card` in the scene plan, do NOT generate an image for it — skip it and let the compose stage render it natively in Remotion.

@@ -94,11 +94,9 @@ class PixabayVideoSource:
                     creator=h.get("user", "") or "",
                     license=_LICENSE,
                     source_tags=tags,
-                    thumbnail_url=(
-                        h.get("userImageURL", "")
-                        or videos.get("tiny", {}).get("thumbnail", "")
-                        or ""
-                    ),
+                    # Only use a thumbnail of the video itself. `userImageURL`
+                    # is the uploader's avatar and is not a valid visual preview.
+                    thumbnail_url=videos.get("tiny", {}).get("thumbnail", "") or "",
                     extra={
                         "views": h.get("views"),
                         "downloads": h.get("downloads"),

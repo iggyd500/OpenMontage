@@ -96,6 +96,16 @@ Both stock video tools support `min_duration` and `max_duration` parameters. Use
 
 ## Integration with Asset Pipeline
 
+For scene-specific selection, prefer the registered `stock_candidate_search`
+tool for metadata-only discovery, followed by `stock_candidate_ranker` and an
+actual thumbnail/frame review with `stock_candidate_preview`.
+`stock_candidate_download` downloads only the
+explicitly approved candidate into the project. Keep the tools separate from
+the agent's scene-by-scene orchestration. Search Pixabay video first, then
+available video adapters, and consider still images only when video is a poor
+fit. Metadata scores are not visual verification; don't infer depicted content
+from tags alone.
+
 Stock tools integrate exactly like generation tools. In the asset manifest:
 
 ```json

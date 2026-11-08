@@ -1,10 +1,27 @@
 # OpenMontage - Global Configuration
 
 llm:
-  provider: anthropic            # anthropic | openai | gemini | openrouter | ollama | mistral | minimax
-  model: null                    # null = use provider default
+  provider: gemini               # gemini | ollama; provider switches are always explicit
+  model: gemini-3.5-flash-lite
   temperature: 0.7
   max_tokens: 4096
+  ollama_base_url: http://localhost:11434
+  request_timeout_seconds: 120
+
+tts:
+  provider: elevenlabs          # Routes to the registered elevenlabs_tts tool; no automatic fallback
+  elevenlabs:
+    model_id: eleven_multilingual_v2
+    voice_name: Brian
+    voice_id: nPczCjzI2devNBz1zQrb
+    language: en
+    output_format: wav_44100     # WAV PCM, 44.1 kHz; locally converted from MP3 44.1 kHz
+  voicestudio:
+    base_url: http://localhost:3900
+    model: kittentts
+    voice: expr-voice-2-m         # Jasper in KittenTTS 0.8
+    speed: 1.0
+    timeout: 900
 
 budget:
   mode: warn                     # observe | warn | cap

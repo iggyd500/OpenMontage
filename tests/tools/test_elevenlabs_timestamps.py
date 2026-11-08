@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import wave
 from unittest.mock import Mock
 
@@ -52,7 +53,8 @@ def test_with_timestamps_calls_endpoint_and_returns_words(monkeypatch, tmp_path)
 
 def test_with_timestamps_pcm_output_is_wrapped_as_wav(monkeypatch, tmp_path):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
-    post = Mock(return_value=_json_response("Hi there", b"\x00\x00" * 50))
+    # Keep the synthetic audio longer than the fixture's 0.8s alignment.
+    post = Mock(return_value=_json_response("Hi there", b"\x00\x00" * 16000))
     monkeypatch.setattr("requests.post", post)
     out = tmp_path / "voice.wav"
 
@@ -62,8 +64,9 @@ def test_with_timestamps_pcm_output_is_wrapped_as_wav(monkeypatch, tmp_path):
 
     assert result.success, result.error
     with wave.open(str(out)) as wav:
-        assert wav.getframerate() == 16000 and wav.getnframes() == 50
+        assert wav.getframerate() == 16000 and wav.getnframes() == 16000
     assert [w["word"] for w in result.data["word_timestamps"]] == ["Hi", "there"]
+    assert result.data["audio_duration_seconds"] == 1.0
 
 
 def test_default_path_is_unchanged(monkeypatch, tmp_path):
@@ -101,6 +104,40 @@ def test_words_from_alignment_handles_multichar_entries():
         {"word": "Hello", "start": 0.0, "end": 0.5},
         {"word": "world!", "start": 0.6, "end": 1.1},
     ]
+
+
+def test_alignment_rejects_negative_reversed_or_nonchronological_times():
+    for starts, ends in (
+        ([-0.1, 0.2], [0.1, 0.3]),
+        ([0.0, 0.2], [0.3, 0.1]),
+        ([0.3, 0.2], [0.4, 0.5]),
+        ([0.0, 0.2], [0.1, math.inf]),
+    ):
+        alignment = {
+            "characters": ["a", "b"],
+            "character_start_times_seconds": starts,
+            "character_end_times_seconds": ends,
+        }
+        try:
+            ElevenLabsTTS._validate_alignment(alignment)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid alignment should be rejected")
+
+
+def test_alignment_with_only_whitespace_does_not_create_empty_word_list():
+    alignment = {
+        "characters": [" ", "\n"],
+        "character_start_times_seconds": [0.0, 0.1],
+        "character_end_times_seconds": [0.1, 0.2],
+    }
+    try:
+        ElevenLabsTTS.words_from_alignment(alignment)
+    except ValueError as exc:
+        assert "without spoken words" in str(exc)
+    else:
+        raise AssertionError("alignment without word timestamps should fail")
 
 
 def test_with_timestamps_is_part_of_idempotency_key():

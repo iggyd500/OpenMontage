@@ -3,7 +3,8 @@
 Neural TTS served by Azure AI Speech via the REST v1 endpoint. This is an
 optional cloud TTS provider; when ``AZURE_SPEECH_KEY`` + ``AZURE_SPEECH_REGION``
 are configured the agent may prefer it for high-quality narration, while the
-local ``piper_tts`` tool remains the default offline path.
+local ``piper_tts`` tool remains an optional offline alternative. The configured
+TTS default is direct ElevenLabs; providers do not silently fall back.
 
 Shares the same Speech resource credentials as the ``azure_stt`` transcription
 tool (one key/region unlocks both directions). Uses the synchronous

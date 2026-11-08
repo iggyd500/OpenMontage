@@ -241,14 +241,6 @@ class HyperFramesCompose(BaseTool):
 
     _NODE_FLOOR_MAJOR = 22
     _NPM_PACKAGE = "hyperframes"  # published npm name (NOT @hyperframes/cli — that's 404)
-    # Process-level cache for the npm resolve check. Shape:
-    #   {"version": "0.4.5"}   → package resolves
-    #   {"error": "<short>"}   → resolution failed (offline, unpublished, etc.)
-    # We cache per-process so the first call pays ~2-5s and subsequent calls
-    # (get_info spam from the registry) are free.
-    _npm_resolve_cache: Optional[dict[str, str]] = None
-    _cli_probe_cache: Optional[dict[str, str]] = None
-
     @classmethod
     def _node_major_version(cls) -> Optional[int]:
         """Return Node.js major version, or None if node isn't installed."""
@@ -256,9 +248,7 @@ class HyperFramesCompose(BaseTool):
         if not node:
             return None
         try:
-            out = subprocess.run(
-                [node, "--version"], capture_output=True, text=True, timeout=5
-            )
+            out = cls._run_subprocess([node, "--version"], timeout=5)
             if out.returncode != 0:
                 return None
             match = re.match(r"v?(\d+)\.", out.stdout.strip())
@@ -272,103 +262,86 @@ class HyperFramesCompose(BaseTool):
     def _resolve_npm_package(cls) -> dict[str, str]:
         """Verify the `hyperframes` npm package actually resolves.
 
-        `_runtime_check` previously only verified that node/ffmpeg/npx existed
-        on PATH, which meant `runtime_available: True` on any machine with
-        Node + FFmpeg — even offline, even if npm was down, even if the
-        package was unpublished. This method performs a cheap
-        `npm view hyperframes version` (5s timeout) and caches the answer
-        for the rest of the process.
+        This network probe is only called by the explicit `doctor` operation.
+        Routine status checks are restricted to local prerequisites.
 
         Returns {"version": "X.Y.Z"} on success, {"error": "<short>"} on any
         failure (404, timeout, network error, npm missing). Never raises.
         """
-        if cls._npm_resolve_cache is not None:
-            return cls._npm_resolve_cache
-
         npm = shutil.which("npm")
         if not npm:
-            cls._npm_resolve_cache = {"error": "npm not on PATH"}
-            return cls._npm_resolve_cache
+            return {"error": "npm not on PATH"}
 
         try:
-            proc = subprocess.run(
-                [npm, "view", cls._NPM_PACKAGE, "version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
+            proc = cls._run_subprocess(
+                [npm, "view", cls._NPM_PACKAGE, "version"], timeout=5
             )
-        except subprocess.TimeoutExpired:
-            cls._npm_resolve_cache = {"error": "timeout (5s) — offline or slow registry"}
-            return cls._npm_resolve_cache
         except (OSError, subprocess.SubprocessError) as e:
-            cls._npm_resolve_cache = {"error": f"npm view failed: {type(e).__name__}"}
-            return cls._npm_resolve_cache
+            return {"error": f"npm view failed: {type(e).__name__}"}
+
+        if proc.returncode == 124:
+            return {"error": "timeout (5s) -- offline or slow registry"}
 
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
             # Most common failure is 404 (package unpublished or name wrong).
             if "404" in stderr or "E404" in stderr:
-                cls._npm_resolve_cache = {
-                    "error": f"npm package `{cls._NPM_PACKAGE}` not found (404)"
-                }
+                return {"error": f"npm package `{cls._NPM_PACKAGE}` not found (404)"}
             else:
                 tail = stderr.splitlines()[-1][:200] if stderr else f"exit {proc.returncode}"
-                cls._npm_resolve_cache = {"error": f"npm view failed: {tail}"}
-            return cls._npm_resolve_cache
+                return {"error": f"npm view failed: {tail}"}
 
         version = (proc.stdout or "").strip()
         if not version:
-            cls._npm_resolve_cache = {"error": "npm view returned empty version"}
-        else:
-            cls._npm_resolve_cache = {"version": version}
-        return cls._npm_resolve_cache
+            return {"error": "npm view returned empty version"}
+        return {"version": version}
 
     @classmethod
     def _probe_cli(cls) -> dict[str, str]:
-        """Run the published CLI's doctor command once per process.
+        """Run the published CLI's doctor command.
 
         Package resolution alone does not prove that the executable can start:
         an upstream packaging regression can publish successfully while every
-        CLI command crashes during bootstrap. Provider preflight must not call
-        that state available.
+        CLI command crashes during bootstrap. Called only by explicit doctor.
         """
-        if cls._cli_probe_cache is not None:
-            return cls._cli_probe_cache
-
         npx = shutil.which("npx")
         if not npx:
-            cls._cli_probe_cache = {"error": "npx not on PATH"}
-            return cls._cli_probe_cache
+            return {"error": "npx not on PATH"}
 
         try:
-            proc = subprocess.run(
-                [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=20,
+            proc = cls._run_subprocess(
+                [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"], timeout=20
             )
-        except subprocess.TimeoutExpired:
-            cls._cli_probe_cache = {"error": "doctor timed out after 20s"}
-            return cls._cli_probe_cache
         except (OSError, subprocess.SubprocessError) as exc:
-            cls._cli_probe_cache = {"error": f"doctor failed: {type(exc).__name__}"}
-            return cls._cli_probe_cache
+            return {"error": f"doctor failed: {type(exc).__name__}"}
+
+        if proc.returncode == 124:
+            return {
+                "error": "doctor timed out after 20s",
+                "stdout_tail": (proc.stdout or "")[-4000:],
+                "stderr_tail": (proc.stderr or "")[-4000:],
+            }
 
         if proc.returncode != 0:
             output = "\n".join(filter(None, [proc.stderr, proc.stdout])).strip()
             tail = output.splitlines()[-1][:200] if output else f"exit {proc.returncode}"
-            cls._cli_probe_cache = {"error": f"doctor failed: {tail}"}
-        else:
-            cls._cli_probe_cache = {"status": "ok"}
-        return cls._cli_probe_cache
+            return {
+                "error": f"doctor failed: {tail}",
+                "stdout_tail": (proc.stdout or "")[-4000:],
+                "stderr_tail": (proc.stderr or "")[-4000:],
+            }
+        return {
+            "status": "ok",
+            "stdout_tail": (proc.stdout or "")[-4000:],
+            "stderr_tail": (proc.stderr or "")[-4000:],
+        }
 
-    def _runtime_check(self) -> dict[str, Any]:
+    def _runtime_check(self, *, diagnostics: bool = False) -> dict[str, Any]:
         """Return availability state for the HyperFrames runtime.
 
-        Checks BOTH local binaries (node >= 22, ffmpeg, npx) AND that the
-        `hyperframes` npm package actually resolves. A missing/404 package
-        counts as unavailable — `runtime_available: True` means the runtime
-        can genuinely run end-to-end, not just that the local tooling exists.
+        Routine availability checks inspect local prerequisites only and never
+        access npm. Network-backed package and CLI checks run only when an
+        operator explicitly requests the `doctor` operation.
         """
         node_major = self._node_major_version()
         ffmpeg_ok = shutil.which("ffmpeg") is not None
@@ -389,7 +362,8 @@ class HyperFramesCompose(BaseTool):
         # Only probe npm if the local tooling is actually usable — otherwise
         # a missing-node run would also show a confusing npm error.
         npm_resolve: dict[str, str] = {}
-        if not reasons:
+        cli_probe: dict[str, str] = {}
+        if diagnostics and not reasons:
             npm_resolve = self._resolve_npm_package()
             if "error" in npm_resolve:
                 reasons.append(
@@ -397,8 +371,7 @@ class HyperFramesCompose(BaseTool):
                     f"{npm_resolve['error']}"
                 )
 
-        cli_probe: dict[str, str] = {}
-        if not reasons:
+        if diagnostics and not reasons:
             cli_probe = self._probe_cli()
             if "error" in cli_probe:
                 reasons.append(f"published CLI is not executable: {cli_probe['error']}")
@@ -413,8 +386,77 @@ class HyperFramesCompose(BaseTool):
             "npm_resolve_error": npm_resolve.get("error"),
             "cli_probe_status": cli_probe.get("status"),
             "cli_probe_error": cli_probe.get("error"),
+            "cli_probe_stdout_tail": cli_probe.get("stdout_tail", ""),
+            "cli_probe_stderr_tail": cli_probe.get("stderr_tail", ""),
+            "diagnostics_checked": diagnostics,
             "reasons": reasons,
         }
+
+    @staticmethod
+    def _terminate_process_tree(proc: subprocess.Popen) -> None:
+        """Stop a timed-out command and its descendants, including Windows .cmd children."""
+        if os.name == "nt":
+            try:
+                killer = subprocess.Popen(
+                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                try:
+                    killer.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    killer.kill()
+            except (OSError, subprocess.SubprocessError):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+        else:
+            try:
+                os.killpg(proc.pid, 9)
+            except (OSError, AttributeError):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+    @classmethod
+    def _run_subprocess(
+        cls, cmd: list[str], *, timeout: int, cwd: Optional[str] = None
+    ) -> subprocess.CompletedProcess:
+        """Run a command with a bounded timeout that reaps its process tree."""
+        kwargs: dict[str, Any] = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=cwd, **kwargs
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired as exc:
+            cls._terminate_process_tree(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired as still_running:
+                proc.kill()
+                # Never fall back to an unbounded communicate(): a surviving
+                # descendant may still hold the inherited pipe handles open.
+                stdout = cls._as_text(still_running.output or exc.stdout)
+                stderr = cls._as_text(still_running.stderr or exc.stderr)
+            stdout = stdout or cls._as_text(exc.stdout)
+            stderr = stderr or cls._as_text(exc.stderr)
+            stderr += f"\n[timeout after {timeout}s]"
+            return subprocess.CompletedProcess(cmd, 124, stdout, stderr)
+
+    @staticmethod
+    def _as_text(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode(errors="replace")
+        return value or ""
 
     def get_status(self) -> ToolStatus:
         check = self._runtime_check()
@@ -493,7 +535,7 @@ class HyperFramesCompose(BaseTool):
 
     def _doctor(self, inputs: dict[str, Any]) -> ToolResult:
         """Probe the environment. Reports node/ffmpeg/npx plus CLI doctor output."""
-        check = self._runtime_check()
+        check = self._runtime_check(diagnostics=True)
         out: dict[str, Any] = {"runtime_check": check}
 
         if not check["runtime_available"]:
@@ -506,28 +548,19 @@ class HyperFramesCompose(BaseTool):
                 data=out,
             )
 
-        # Ask the CLI itself for a deeper check. This also warms the npm
-        # cache so the first real render doesn't pay the download cost.
-        try:
-            proc = self._run_hf(["doctor"], cwd=None, timeout=180, check=False)
-            out["cli_doctor"] = {
-                "exit_code": proc.returncode,
-                "stdout_tail": (proc.stdout or "")[-4000:],
-                "stderr_tail": (proc.stderr or "")[-4000:],
-            }
-            ok = proc.returncode == 0
-            return ToolResult(
-                success=ok,
-                data=out,
-                error=None if ok else f"hyperframes doctor exit {proc.returncode}",
-            )
-        except Exception as e:
-            out["cli_doctor_error"] = str(e)
-            return ToolResult(
-                success=False,
-                error=f"hyperframes doctor failed: {e}",
-                data=out,
-            )
+        cli = {
+            "status": check.get("cli_probe_status"),
+            "error": check.get("cli_probe_error"),
+            "stdout_tail": check.get("cli_probe_stdout_tail", ""),
+            "stderr_tail": check.get("cli_probe_stderr_tail", ""),
+        }
+        out["cli_doctor"] = cli
+        ok = cli["status"] == "ok"
+        return ToolResult(
+            success=ok,
+            data=out,
+            error=None if ok else f"hyperframes doctor failed: {cli['error']}",
+        )
 
     def _scaffold(self, inputs: dict[str, Any]) -> ToolResult:
         """Materialize the HyperFrames workspace from OpenMontage artifacts.
@@ -1368,23 +1401,11 @@ class HyperFramesCompose(BaseTool):
             if resolved:
                 cmd[0] = resolved
         try:
-            return subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=str(cwd) if cwd else None,
-                check=False,
+            return self._run_subprocess(
+                cmd, timeout=timeout, cwd=str(cwd) if cwd else None
             )
-        except subprocess.TimeoutExpired as e:
-            # Surface timeouts as a failed CompletedProcess so callers get a
-            # uniform shape. The stderr tail will say timeout.
-            return subprocess.CompletedProcess(
-                args=cmd,
-                returncode=124,
-                stdout=e.stdout or "",
-                stderr=(e.stderr or "") + f"\n[timeout after {timeout}s]",
-            )
+        except (OSError, subprocess.SubprocessError) as e:
+            return subprocess.CompletedProcess(cmd, 127, "", f"{type(e).__name__}: {e}")
 
     @staticmethod
     def _parse_json_output(stdout: str) -> Optional[Any]:

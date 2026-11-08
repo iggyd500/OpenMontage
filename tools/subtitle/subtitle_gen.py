@@ -8,6 +8,8 @@ the standard library.
 from __future__ import annotations
 
 import json
+import math
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -69,6 +71,19 @@ class SubtitleGen(BaseTool):
                     "Example: {\"cloud\": \"Claude\", \"co-pilot\": \"Copilot\"}."
                 ),
             },
+            "require_word_timestamps": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Reject segment-only timing instead of producing a subtitle cue "
+                    "from estimated or coarse segment boundaries."
+                ),
+            },
+            "audio_duration_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Optional source audio duration used to validate alignment bounds.",
+            },
         },
     }
 
@@ -87,6 +102,8 @@ class SubtitleGen(BaseTool):
         highlight_style = inputs.get("highlight_style", "none")
         output_path = inputs.get("output_path")
         corrections = inputs.get("corrections")
+        require_words = bool(inputs.get("require_word_timestamps", False))
+        audio_duration = inputs.get("audio_duration_seconds")
 
         start = time.time()
 
@@ -94,7 +111,17 @@ class SubtitleGen(BaseTool):
         if corrections:
             segments = self._apply_corrections(segments, corrections)
 
+        if require_words:
+            try:
+                self._validate_word_timestamps(segments, audio_duration)
+            except ValueError as exc:
+                return ToolResult(success=False, error=str(exc))
+
         # Build cues from word-level timestamps
+        has_word_times = all(
+            isinstance(segment, dict) and bool(segment.get("words"))
+            for segment in segments
+        )
         cues = self._build_cues(segments, max_words, max_chars)
 
         if fmt == "srt":
@@ -104,7 +131,14 @@ class SubtitleGen(BaseTool):
             content = self._render_vtt(cues, highlight_style)
             ext = ".vtt"
         elif fmt == "json":
-            content = json.dumps({"cues": cues, "highlight_style": highlight_style}, indent=2)
+            content = json.dumps(
+                {
+                    "cues": cues,
+                    "highlight_style": highlight_style,
+                    "captions": self._remotion_captions(cues),
+                },
+                indent=2,
+            )
             ext = ".caption.json"
         else:
             return ToolResult(success=False, error=f"Unknown format: {fmt}")
@@ -123,6 +157,11 @@ class SubtitleGen(BaseTool):
                 "format": fmt,
                 "cue_count": len(cues),
                 "output": str(out),
+                "remotion_captions": self._remotion_captions(cues),
+                "timing_source": "word_level" if has_word_times else "segment_boundaries",
+                "timing_warning": None
+                if has_word_times
+                else "Word-level alignment unavailable; cues use coarse segment boundaries and are not word-synchronized.",
             },
             artifacts=[str(out)],
             duration_seconds=round(elapsed, 2),
@@ -211,6 +250,20 @@ class SubtitleGen(BaseTool):
             buf.append(w)
             buf_text = f"{buf_text} {word_text}".strip() if buf_text else word_text
 
+            if self._ends_sentence(word_text):
+                cues.append({
+                    "index": len(cues) + 1,
+                    "start": buf[0]["start"],
+                    "end": buf[-1]["end"],
+                    "text": buf_text,
+                    "words": [
+                        {"word": b["word"].strip(), "start": b["start"], "end": b["end"]}
+                        for b in buf
+                    ],
+                })
+                buf = []
+                buf_text = ""
+
         # Flush remaining
         if buf:
             cues.append({
@@ -225,6 +278,67 @@ class SubtitleGen(BaseTool):
             })
 
         return cues
+
+    @staticmethod
+    def _ends_sentence(word: str) -> bool:
+        return bool(re.search(r"[.!?][\"'”’)}\]]*$", word))
+
+    @staticmethod
+    def _validate_word_timestamps(
+        segments: list[dict], audio_duration: float | None
+    ) -> None:
+        """Require real word-level times; do not accept segment-only estimates."""
+        if not isinstance(segments, list) or not segments:
+            raise ValueError("Word-level alignment is required, but no transcript segments were provided.")
+        if audio_duration is not None and (
+            not isinstance(audio_duration, (int, float))
+            or not math.isfinite(audio_duration)
+            or audio_duration <= 0
+        ):
+            raise ValueError("audio_duration_seconds must be a finite positive number.")
+
+        all_words = []
+        for segment in segments:
+            words = segment.get("words") if isinstance(segment, dict) else None
+            if not isinstance(words, list) or not words:
+                raise ValueError(
+                    "Word-level alignment is missing; refusing segment-level subtitle timing."
+                )
+            all_words.extend(words)
+        previous_start = previous_end = -1.0
+        for item in all_words:
+            if not isinstance(item, dict) or not isinstance(item.get("word"), str) or not item["word"].strip():
+                raise ValueError("Word-level alignment contains an empty or malformed word.")
+            start, end = item.get("start"), item.get("end")
+            if (
+                not isinstance(start, (int, float))
+                or not isinstance(end, (int, float))
+                or not math.isfinite(start)
+                or not math.isfinite(end)
+            ):
+                raise ValueError("Word-level alignment contains invalid timestamps.")
+            if start < 0 or end <= start or start < previous_start or end < previous_end:
+                raise ValueError("Word-level timestamps must be non-negative, positive-duration, and chronological.")
+            if audio_duration is not None and end > audio_duration + 0.05:
+                raise ValueError("Word-level timestamp exceeds audio_duration_seconds.")
+            previous_start, previous_end = start, end
+
+    @staticmethod
+    def _remotion_captions(cues: list[dict]) -> list[dict]:
+        """Convert aligned cue words to Remotion CaptionOverlay's word schema."""
+        captions = []
+        for cue in cues:
+            words = cue.get("words", [])
+            for index, word in enumerate(words):
+                captions.append(
+                    {
+                        "word": word["word"],
+                        "startMs": round(float(word["start"]) * 1000),
+                        "endMs": round(float(word["end"]) * 1000),
+                        **({"pageBreakAfter": True} if index == len(words) - 1 else {}),
+                    }
+                )
+        return captions
 
     def _render_srt(self, cues: list[dict], highlight_style: str = "none") -> str:
         lines = []

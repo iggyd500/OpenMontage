@@ -203,6 +203,14 @@ class VideoCompose(BaseTool):
                     "networks). The subprocess timeout is widened to match."
                 ),
             },
+            "remotion_concurrency": {
+                "type": "integer",
+                "minimum": 1,
+                "description": (
+                    "Optional Remotion render concurrency. Set to 1 for lower-memory "
+                    "renders or when diagnosing OffthreadVideo frame-cache failures."
+                ),
+            },
         },
     }
 
@@ -1668,6 +1676,8 @@ class VideoCompose(BaseTool):
             # would only take effect on a direct _remotion_render() call.
             if inputs.get("remotion_timeout_ms") is not None:
                 remotion_inputs["remotion_timeout_ms"] = inputs["remotion_timeout_ms"]
+            if inputs.get("remotion_concurrency") is not None:
+                remotion_inputs["remotion_concurrency"] = inputs["remotion_concurrency"]
             if inputs.get("public_dir") is not None:
                 remotion_inputs["public_dir"] = inputs["public_dir"]
             render_result = self._remotion_render(remotion_inputs)
@@ -2070,6 +2080,22 @@ class VideoCompose(BaseTool):
                     cmd.extend(["--width", str(p.width), "--height", str(p.height)])
                 except (ImportError, ValueError):
                     pass
+
+            concurrency = inputs.get("remotion_concurrency")
+            if concurrency is not None:
+                try:
+                    concurrency = int(concurrency)
+                except (TypeError, ValueError):
+                    return ToolResult(
+                        success=False,
+                        error="remotion_concurrency must be a positive integer.",
+                    )
+                if concurrency < 1:
+                    return ToolResult(
+                        success=False,
+                        error="remotion_concurrency must be a positive integer.",
+                    )
+                cmd.append(f"--concurrency={concurrency}")
 
             # Optional creator-facing render timeout. Remotion's `--timeout` (ms)
             # governs headless-browser setup and delayRender(); on slow machines or

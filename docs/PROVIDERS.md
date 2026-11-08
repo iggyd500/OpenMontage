@@ -730,7 +730,7 @@ allowance). OpenMontage estimates cost from the transcribed audio duration. See
 
 ### Azure AI Speech — Text-to-Speech
 
-> **Cloud neural narration.** Azure neural TTS delivers high-quality multilingual voices with SSML prosody control and express-as styles — same Speech resource as `azure_stt`, so one key/region unlocks both directions. Optional: the local `piper_tts` remains the default offline TTS path. When `AZURE_SPEECH_KEY` is set, the agent may prefer `azure_tts` for cloud narration.
+> **Cloud neural narration.** Azure neural TTS delivers high-quality multilingual voices with SSML prosody control and express-as styles — same Speech resource as `azure_stt`, so one key/region unlocks both directions. `azure_tts` can be selected explicitly when `AZURE_SPEECH_KEY` is set. The configured TTS default is direct ElevenLabs with Brian; local `piper_tts` and VoiceStudio remain alternatives.
 
 **Tools unlocked:** `azure_tts`
 **Env vars:** `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (or `AZURE_TTS_ENDPOINT`)

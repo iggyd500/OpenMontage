@@ -10,6 +10,7 @@ from tools.video.stock_sources.wikimedia import (
     _kind_from_mime,
     _meta_value,
 )
+from tools.video.stock_sources.pixabay_video import PixabayVideoSource
 
 
 def test_stock_source_autodiscovery_includes_new_sources():
@@ -75,6 +76,27 @@ def test_unsplash_helpers_preserve_query_params():
     assert "ixid=abc" in url
     assert "w=1920" in url
     assert "fm=jpg" in url
+
+
+def test_pixabay_video_uses_video_thumbnail_before_uploader_avatar(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"hits": [{
+                "id": 9, "duration": 12, "tags": "doctor, scan",
+                "pageURL": "https://pixabay.com/videos/9/", "userImageURL": "https://pixabay.com/avatar.jpg",
+                "videos": {
+                    "large": {"url": "https://cdn.example/video.mp4", "width": 720, "height": 1280},
+                    "tiny": {"thumbnail": "https://cdn.example/thumb.jpg"},
+                },
+            }]}
+
+    monkeypatch.setenv("PIXABAY_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=lambda *_a, **_k: Response()))
+    candidates = PixabayVideoSource().search("doctor scan", SearchFilters(kind="video"))
+    assert candidates[0].thumbnail_url == "https://cdn.example/thumb.jpg"
 
 
 # ---------------------------------------------------------------------

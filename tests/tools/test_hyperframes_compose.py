@@ -215,20 +215,13 @@ def test_install_instructions_reference_correct_npm_package_name():
 
 
 def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
-    """Regression: `_runtime_check()` previously returned runtime_available=True
-    based only on local binaries (node/ffmpeg/npx). That meant the tool lied
-    when the machine was offline, npm was down, or the package name was wrong.
-    The check must now include a real npm resolve."""
-    # Clear process cache and force _resolve_npm_package to return a 404.
-    monkeypatch.setattr(
-        HyperFramesCompose, "_npm_resolve_cache", None, raising=False
-    )
+    """Explicit diagnostics report package resolution failures."""
     monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
         classmethod(lambda cls: {"error": "npm package `hyperframes` not found (404)"}),
     )
-    rc = HyperFramesCompose()._runtime_check()
+    rc = HyperFramesCompose()._runtime_check(diagnostics=True)
     assert rc["runtime_available"] is False, (
         "Runtime must report NOT available when the npm package can't be "
         "resolved — even if node/ffmpeg/npx are all on PATH."
@@ -243,9 +236,6 @@ def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
 
 def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
     monkeypatch.setattr(
-        HyperFramesCompose, "_npm_resolve_cache", None, raising=False
-    )
-    monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
         classmethod(lambda cls: {"version": "0.4.5"}),
@@ -255,7 +245,7 @@ def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
         "_probe_cli",
         classmethod(lambda cls: {"status": "ok"}),
     )
-    rc = HyperFramesCompose()._runtime_check()
+    rc = HyperFramesCompose()._runtime_check(diagnostics=True)
     # Local binaries must still pass for this to go green.
     if rc["node_major"] is None or not rc["ffmpeg_available"] or not rc["npx_available"]:
         pytest.skip("Local runtime floor not met on this machine")
@@ -280,7 +270,7 @@ def test_runtime_check_fails_when_published_cli_crashes(monkeypatch):
         ),
     )
 
-    rc = HyperFramesCompose()._runtime_check()
+    rc = HyperFramesCompose()._runtime_check(diagnostics=True)
 
     if rc["node_major"] is None or not rc["ffmpeg_available"] or not rc["npx_available"]:
         pytest.skip("Local runtime floor not met on this machine")
@@ -290,23 +280,94 @@ def test_runtime_check_fails_when_published_cli_crashes(monkeypatch):
 
 
 def test_video_compose_render_engines_follow_hyperframes_runtime_check(monkeypatch):
-    """Regression: `video_compose.get_info()['render_engines']['hyperframes']`
-    must track the true availability, not just the local-binary floor.
-    Without this, the 'Present Both Composition Runtimes' HARD RULE surfaces
-    a runtime that cannot actually render."""
+    """Routine render-engine discovery must not require npm network access."""
     monkeypatch.setattr(
-        HyperFramesCompose, "_npm_resolve_cache", None, raising=False
+        HyperFramesCompose,
+        "_resolve_npm_package",
+        classmethod(lambda cls: pytest.fail("unexpected npm access")),
+    )
+    monkeypatch.setattr(
+        HyperFramesCompose, "_probe_cli",
+        classmethod(lambda cls: pytest.fail("unexpected npx access")),
+    )
+    info = VideoCompose().get_info()
+    assert isinstance(info["render_engines"]["hyperframes"], bool)
+
+
+def test_routine_hyperframes_discovery_is_offline(monkeypatch):
+    monkeypatch.setattr(
+        HyperFramesCompose,
+        "_resolve_npm_package",
+        classmethod(lambda cls: pytest.fail("unexpected npm access")),
+    )
+    monkeypatch.setattr(
+        HyperFramesCompose,
+        "_probe_cli",
+        classmethod(lambda cls: pytest.fail("unexpected npx access")),
+    )
+    tool = HyperFramesCompose()
+    assert tool.get_status() in (ToolStatus.AVAILABLE, ToolStatus.UNAVAILABLE)
+    assert tool.get_info()["hyperframes_runtime"]["diagnostics_checked"] is False
+
+
+def test_explicit_doctor_runs_optional_diagnostics(monkeypatch):
+    monkeypatch.setattr(HyperFramesCompose, "_node_major_version", classmethod(lambda cls: 22))
+    monkeypatch.setattr(
+        "tools.video.hyperframes_compose.shutil.which", lambda name: "present"
     )
     monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
-        classmethod(lambda cls: {"error": "npm package not found (404)"}),
+        classmethod(lambda cls: {"version": "1.2.3"}),
     )
-    info = VideoCompose().get_info()
-    assert info["render_engines"]["hyperframes"] is False, (
-        "video_compose must mark hyperframes as unavailable when the real "
-        "runtime check fails. Otherwise the HARD RULE lies."
+    monkeypatch.setattr(
+        HyperFramesCompose,
+        "_probe_cli",
+        classmethod(lambda cls: {"status": "ok", "stdout_tail": "doctor ok"}),
     )
+    result = HyperFramesCompose()._doctor({})
+    assert result.success is True
+    assert result.data["runtime_check"]["diagnostics_checked"] is True
+    assert result.data["cli_doctor"]["stdout_tail"] == "doctor ok"
+
+
+def test_windows_timeout_kills_descendant_tree(monkeypatch):
+    import subprocess
+
+    commands = []
+
+    class TimedOutProcess:
+        pid = 4321
+        returncode = -9
+
+        def __init__(self):
+            self.calls = 0
+
+        def communicate(self, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired("npx", timeout, output="", stderr="")
+            return "", ""
+
+        def kill(self):
+            pass
+
+    class TaskkillProcess:
+        def wait(self, timeout=None):
+            return 0
+
+    timed_out = TimedOutProcess()
+
+    def fake_popen(command, **kwargs):
+        commands.append(command)
+        return TaskkillProcess() if command[0] == "taskkill" else timed_out
+
+    monkeypatch.setattr("tools.video.hyperframes_compose.os.name", "nt")
+    monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    result = HyperFramesCompose._run_subprocess(["npx.cmd"], timeout=1)
+    assert result.returncode == 124
+    assert commands[1] == ["taskkill", "/PID", "4321", "/T", "/F"]
 
 
 def test_provider_menu_summary_returns_expected_shape():
@@ -329,6 +390,9 @@ def test_provider_menu_summary_returns_expected_shape():
     for engine in ("ffmpeg", "remotion", "hyperframes"):
         assert engine in s["composition_runtimes"]
         assert isinstance(s["composition_runtimes"][engine], bool)
+    assert any(
+        "offline preflight" in warning for warning in s["runtime_warnings"]
+    )
 
     # Capabilities rollup is a list of dicts with configured/total counts.
     assert isinstance(s["capabilities"], list)

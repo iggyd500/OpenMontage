@@ -37,8 +37,9 @@ Every tool declares a `capability` (what it does) and a `provider` (who/what pow
 ### Selector / Provider Pattern
 
 For capability families with multiple providers (TTS, video generation), the architecture uses:
-- **Selector tool** (`tts_selector`, `video_selector`, `image_selector`) — routes to the best available provider based on requirements, API key availability, and cost. Selectors auto-discover providers from the registry. Agents should default to selectors when the user hasn't specified a provider.
+- **Selector tool** (`tts_selector`, `video_selector`, `image_selector`) — routes to discovered providers based on requirements, configured defaults, and explicit user choices. For TTS, an omitted provider uses `config.yaml`'s `tts.provider` (direct ElevenLabs / Brian by default; Piper and VoiceStudio remain selectable alternatives); `preferred_tool` and `preferred_provider` select an explicit route, and failures do not silently switch providers. Use `preferred_provider: "auto"` only when scored automatic selection is intended.
 - **Provider tools** — call a specific provider directly. Agents use these when the user explicitly requests a provider or when the selector's routing isn't appropriate.
+- **Configured text generation** — `text_generation` is a single registry tool whose Gemini/Ollama backend is selected by `config.yaml`; it does not use a media selector and never falls back automatically.
 
 ### Capability Family Reference
 
@@ -55,6 +56,8 @@ Key capability families to look for in the output:
 | `tts` | `tts_selector` | Auto-discovers all `capability="tts"` tools |
 | `video_generation` | `video_selector` | Auto-discovers all `capability="video_generation"` tools |
 | `image_generation` | `image_selector` | Auto-discovers all `capability="image_generation"` tools |
+| `text_generation` | — | Uses `config.yaml` to select Gemini or Ollama; no automatic fallback |
+| `stock_discovery` / `stock_candidate_evaluation` / `stock_preview` | — | Metadata-only stock search, transparent candidate ranking, and size-capped previews; explicit Codex visual review before full download |
 | `audio_processing` | — | FFmpeg-based local tools |
 | `enhancement` | — | Mixed providers |
 | `analysis` | — | Mixed providers |
@@ -78,7 +81,7 @@ Key capability families to look for in the output:
 3. If joining a multi-provider family, the existing selector discovers it automatically
 4. Attach relevant Layer 2 and Layer 3 skills via `agent_skills[]`
 5. The registry discovers tools automatically — no manual registration needed
-6. **No other files need updating** — selectors, manifests, and instructions all derive from the registry
+6. Keep registry discovery automatic; update selectors only when routing logic changes, and update manifests/director instructions when a production stage needs the capability
 
 ## Core Skills
 
@@ -87,6 +90,7 @@ Key capability families to look for in the output:
 | FFmpeg | `core/ffmpeg.md` | Video encoding, filtering, composition | `ffmpeg`, `video-toolkit` |
 | Remotion | `core/remotion.md` | React-based composition, Phase 3+ | `remotion-best-practices`, `remotion` |
 | HyperFrames | `core/hyperframes.md` | HTML/CSS/GSAP composition runtime — kinetic typography, music-to-video, product promos, website capture. Vendored at v0.7.17 (2026-06-27). | `hyperframes` (router) → `hyperframes-core` (contract), `hyperframes-creative` (palette/type/narration), `hyperframes-media` (TTS/BGM/SFX/captions), `hyperframes-animation` (all motion), `hyperframes-cli`, `hyperframes-registry`, `media-use`, `motion-graphics`, `music-to-video` (beats-driven), `website-to-video`, `remotion-to-hyperframes` (migration), `gsap-core`, `gsap-timeline` |
+| Configured Text Generation | `core/text-generation.md` | Research synthesis, scripts, storyboards and visual-prompt drafts using the explicit Gemini or Ollama config | — |
 | WhisperX | `core/whisperx.md` | Transcription with word-level timestamps — default STT (offline, free) | `speech-to-text` |
 | Azure STT | (tool: `azure_stt`) | Optional cloud speech-to-text, word-level timestamps — preferred when `AZURE_SPEECH_KEY` is set | `azure-speech-to-text` |
 | Azure TTS | (tool: `azure_tts`) | Optional cloud neural narration (SSML prosody, express-as styles) — same Speech key as `azure_stt` | `azure-text-to-speech` |
@@ -316,7 +320,7 @@ Claude Code accesses them via symlinks in `.claude/skills/`.
 |----------|-----------------|--------|
 | **Video Composition** | `remotion-best-practices`, `remotion`, `hyperframes` (router), `hyperframes-core`, `hyperframes-creative`, `hyperframes-media`, `hyperframes-animation`, `hyperframes-cli`, `hyperframes-registry`, `media-use`, `motion-graphics`, `music-to-video`, `remotion-to-hyperframes`, `website-to-video` | `remotion-dev/skills`, `digitalsamba/claude-code-video-toolkit`, `heygen-com/hyperframes` (vendored v0.7.17, see `.agents/skills/hyperframes/PROVENANCE.md`) |
 | **Video Processing** | `ffmpeg`, `video-toolkit` | `digitalsamba/claude-code-video-toolkit` |
-| **TTS & Audio** | `text-to-speech`, `speech-to-text` (whisper, default STT), `azure-speech-to-text` (optional cloud STT), `music`, `sound-effects`, `elevenlabs`, `fish-audio-tts`, `agents`, `setup-api-key` | `elevenlabs/skills`, `digitalsamba/claude-code-video-toolkit`, local OpenMontage skill |
+| **TTS & Audio** | `text-to-speech`, `voicestudio-tts` (local KittenTTS through `tts_selector`), `speech-to-text` (whisper, default STT), `azure-speech-to-text` (optional cloud STT), `music`, `sound-effects`, `elevenlabs`, `fish-audio-tts`, `agents`, `setup-api-key` | `elevenlabs/skills`, `digitalsamba/claude-code-video-toolkit`, local OpenMontage skill |
 | **Image Generation** | `flux-best-practices`, `bfl-api`, `grok-media` | `black-forest-labs/skills`, local OpenMontage skill |
 | **Math Animation** | `manimce-best-practices`, `manimgl-best-practices`, `manim-composer` | `adithya-s-k/manim_skill` |
 | **3D Graphics** | `threejs-world-generation` (OpenMontage semantic-world workflow), `threejs-animation`, `threejs-fundamentals`, `threejs-geometry`, `threejs-interaction`, `threejs-lighting`, `threejs-loaders`, `threejs-materials`, `threejs-postprocessing`, `threejs-shaders`, `threejs-textures` | Local OpenMontage skill + `cloudai-x/threejs-skills` |
