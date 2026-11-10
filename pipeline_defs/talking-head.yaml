@@ -68,6 +68,7 @@ stages:
       - transcriber      # speech-to-text
     optional_tools: []
     tools_available:
+      - text_generation
       - transcriber
     checkpoint_required: true
     human_approval_default: true
@@ -93,6 +94,7 @@ stages:
       - face_tracker     # face position analysis for reframing decisions
       - silence_cutter   # silence detection for jump cut planning
     tools_available:
+      - text_generation
       - frame_sampler
       - face_tracker
       - silence_cutter
@@ -120,6 +122,7 @@ stages:
       - audio_mixer      # audio prep
       - image_selector
     tools_available:
+      - text_generation
       - subtitle_gen
       - audio_mixer
       - image_selector

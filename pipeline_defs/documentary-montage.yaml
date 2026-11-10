@@ -69,7 +69,7 @@ stages:
       - brief
     produces:
       - scene_plan
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -97,6 +97,7 @@ stages:
       - clip_search
       - music_gen
     tools_available:
+      - text_generation
       - direct_clip_search
       - corpus_builder
       - clip_search

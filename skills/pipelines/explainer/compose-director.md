@@ -32,6 +32,19 @@ Read `edit_decisions.render_runtime` before anything else. It was locked at prop
 
 ### Step 1: Choose Render Strategy
 
+Before rendering an explainer, read the stage `composition_plan` and its latest
+`composition_quality` report. Apply its per-cut crop mode/focal point,
+`motion_intensity`, scene graphics, and transition through the existing
+Remotion `Explainer` cuts contract. `cover` uses the configured focal point;
+`contain_blur` preserves all source content against a softened backplate.
+Graphics are scene-local and must remain clear of the plan's subtitle safe area.
+The renderer does not infer subject position, judge relevance, or resolve
+warnings. Stop on technical errors; surface unresolved visual warnings and
+require human review before a production render. Keep caption timing unchanged.
+
+Still-image parallax is not currently true depth-aware parallax; use restrained
+frame-driven pan/zoom and state that limitation in the plan.
+
 Based on the edit decisions, pick the rendering approach:
 
 **Remotion render** (DEFAULT — use this unless explicitly overridden):
@@ -71,7 +84,7 @@ Before rendering, present the user with audio options and get their preferences.
 >
 > **Music:** I can automatically find royalty-free background music from Pixabay (no key needed). If you have a `FREESOUND_API_KEY`, I can also search Freesound as a backup.
 >
-> **Subtitles:** I'll generate word-level subtitles using WhisperX transcription of the final narration, burned into the video via Remotion captions.
+> **Subtitles:** New ElevenLabs narration can return aligned word timings with the TTS request. Existing narration without that sidecar can be aligned to the approved script with ElevenLabs Forced Alignment; this uses Speech-to-Text minutes. The local transcriber is an ASR alternative, not forced alignment to the supplied script.
 >
 > Want me to proceed with my recommendations, or adjust anything?
 
@@ -83,15 +96,16 @@ Before rendering, present the user with audio options and get their preferences.
    - Use 2.0-2.5 words/sec for documentary, 2.5-3.0 for energetic
    - Verify word count before generating TTS
 
-2. **Generate TTS narration:**
+2. **Generate TTS narration through `tts_selector`:**
    ```python
-   from tools.audio.openai_tts import OpenAITTS
-   result = OpenAITTS().execute({
+   from tools.audio.tts_selector import TTSSelector
+   result = TTSSelector().execute({
        'text': narration_script,
-       'voice': '<user-chosen or agent-recommended>',
-       'instructions': '<voice direction matching video tone>',
+       'timestamps': True,
        'output_path': 'path/to/narration.mp3',
    })
+   # Preserve result.data['alignment_path'] and result.data['word_timestamps'].
+   # Confirm alignment_matches_text before using script-exact captions.
    # CRITICAL: Check result.data['audio_duration_seconds'] vs video duration
    # If narration exceeds video by >1s: shorten script and regenerate
    ```
@@ -107,17 +121,34 @@ Before rendering, present the user with audio options and get their preferences.
    })
    ```
 
-4. **Generate subtitles via WhisperX:**
+4. **Use returned TTS alignment, or forced-align an existing narration file:**
    ```python
-   from tools.analysis.transcriber import Transcriber
-   result = Transcriber().execute({
-       'input_path': 'path/to/narration.mp3',
-       'model_size': 'base',
-       'language': 'en',
+   from tools.analysis.elevenlabs_forced_alignment import ElevenLabsForcedAlignment
+   result = ElevenLabsForcedAlignment().execute({
+       'audio_path': 'path/to/narration.wav',
+       'text': approved_narration_script,
+       'output_path': 'projects/<project>/artifacts/narration.alignment.json',
    })
-   # Convert word_timestamps to Remotion caption format:
-   # [{ "word": "Hello", "startMs": 0, "endMs": 340 }, ...]
+   # This bills at the account's Speech-to-Text rate. The tool validates
+   # chronological word timings against ffprobe duration and writes the raw
+   # provider payload plus a separate quality report.
    ```
+
+   Read `result.data["quality_report"]` (or the recorded quality-report path)
+   before building captions. If its `quality_status` is `blocked`, stop and do
+   not create subtitles. For `human_review_required`, present the ranked loss
+   candidates and duration candidates for review; do not claim the subtitles
+   are fully validated until a human checks them. ElevenLabs documents no
+   absolute loss threshold, so the report ranks values without inventing one.
+
+   Convert validated words to SubtitleGen segments (`[{"words": word_timestamps}]`),
+   then set `require_word_timestamps: true` and pass the probed audio duration.
+   For SRT use the returned file for FFmpeg. For Remotion use
+   `SubtitleGen` `format: "json"` and pass `data.captions` as composition props;
+   it emits `{word, startMs, endMs}` values compatible with `CaptionOverlay`.
+   If TTS timestamps or forced alignment are missing/invalid, stop and report the
+   blocker. Do not use estimated segment timing. ASR via `transcriber` may only
+   be selected explicitly and its transcript must be checked against the script.
 
 5. **Assemble composition JSON** with audio config:
    ```json
@@ -126,11 +157,19 @@ Before rendering, present the user with audio options and get their preferences.
        "narration": { "src": "path/to/narration.mp3", "volume": 1 },
        "music": { "src": "path/to/music.mp3", "volume": 0.1, "fadeInSeconds": 2, "fadeOutSeconds": 3 }
      },
-     "captions": [ ... word-level captions from WhisperX ... ]
+     "captions": [ ... validated word-level captions from SubtitleGen ... ]
    }
    ```
 
 ### Step 3: Prepare Render Inputs
+
+For sourced footage, use only the approved scene selections recorded in
+`footage_selection_plan` and the matching project-local files in
+`asset_manifest`. The render contract remains the existing Remotion
+composition: edit cuts reference manifest asset IDs/paths, while provider,
+licence, and selection rationale remain provenance metadata. Do not search for
+or substitute different footage during composition; return to the assets stage
+if a chosen clip is missing or unsuitable.
 
 For each cut in the edit decisions:
 1. Verify the source asset exists at its declared path
@@ -261,7 +300,9 @@ If Remotion is not available, fall back to SRT generation + FFmpeg burn:
    ```python
    from tools.subtitle.subtitle_gen import SubtitleGen
    SubtitleGen().execute({
-       'segments': transcription_data['segments'],
+       'segments': [{'words': aligned_word_timestamps}],
+       'require_word_timestamps': True,
+       'audio_duration_seconds': narration_duration_seconds,
        'format': 'srt',
        'output_path': 'projects/<project>/assets/subtitles.srt',
        'max_words_per_cue': 8,

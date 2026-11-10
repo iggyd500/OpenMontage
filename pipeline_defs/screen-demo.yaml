@@ -105,6 +105,7 @@ stages:
       - scene_detect
       - audio_enhance
     tools_available:
+      - text_generation
       - transcriber
       - scene_detect
     checkpoint_required: true
@@ -129,6 +130,7 @@ stages:
     optional_tools:
       - frame_sampler
     tools_available:
+      - text_generation
       - frame_sampler
     checkpoint_required: true
     human_approval_default: true
@@ -156,6 +158,7 @@ stages:
       - diagram_gen
       - audio_enhance
     tools_available:
+      - text_generation
       - subtitle_gen
       - tts_selector
       - image_selector

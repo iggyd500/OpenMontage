@@ -63,6 +63,7 @@ stages:
     produces:
       - research_brief
     tools_available:
+      - text_generation
       - web_search
     checkpoint_required: true
     human_approval_default: false
@@ -122,6 +123,7 @@ stages:
       - transcriber
       - scene_detect
     tools_available:
+      - text_generation
       - transcriber
       - scene_detect
     checkpoint_required: true
@@ -146,6 +148,7 @@ stages:
       - frame_sampler
       - scene_detect
     tools_available:
+      - text_generation
       - frame_sampler
       - scene_detect
     checkpoint_required: true
@@ -181,6 +184,7 @@ stages:
       - freesound_music
       - music_gen
     tools_available:
+      - text_generation
       - subtitle_gen
       - audio_enhance
       - image_selector

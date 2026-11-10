@@ -544,6 +544,7 @@ Each tool declares which Layer 3 skills it relies on. The agent reads Layer 1 to
 | **Kling Official TTS** | Cloud API | Official Kling narration when a `voice_id` is known |
 | **OpenAI TTS** | Cloud API | Fast, affordable |
 | **Piper** | Local | Completely free, offline |
+| **VoiceStudio / KittenTTS** | Local | Optional English WAV narration; cached model and running VoiceStudio backend required; Jasper maps to `expr-voice-2-m` |
 | **Azure Speech** | Cloud API | Fast multilingual speech services |
 | **DashScope / Doubao / Fish Audio** | Cloud API | Additional multilingual and expressive voice options |
 
@@ -695,7 +696,10 @@ OpenMontage works with any AI coding assistant that can read files and execute P
 
 All platform files point to the shared `AGENT_GUIDE.md` (operating guide and agent contract) and `PROJECT_CONTEXT.md` (architecture reference).
 
-> **Coming soon:** Local LLM support via **Ollama** and **LM Studio** — run the full production pipeline without any cloud LLM.
+OpenMontage's configured text-generation tool supports Gemini cloud generation
+and Ollama as an explicitly selected local alternative. See `config.yaml` and
+`skills/core/text-generation.md`; provider failures never trigger an automatic
+switch.
 
 ---
 

@@ -73,6 +73,7 @@ stages:
     optional_tools:
       - audio_enhance
     tools_available:
+      - text_generation
       - transcriber
       - audio_enhance
     checkpoint_required: true
@@ -97,6 +98,7 @@ stages:
     optional_tools:
       - frame_sampler
     tools_available:
+      - text_generation
       - frame_sampler
     checkpoint_required: true
     human_approval_default: true
@@ -125,6 +127,7 @@ stages:
       - music_gen
       - audio_enhance
     tools_available:
+      - text_generation
       - subtitle_gen
       - image_selector
       - diagram_gen

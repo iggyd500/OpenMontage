@@ -39,7 +39,15 @@ scene analysis from dialogue.
 
 ### Word Timestamps for Subtitles
 
-The transcriber produces word-level timestamps with confidence scores. The `subtitle_gen` tool consumes these directly:
+The transcriber performs ASR and returns word-level timestamps with confidence
+scores for the recognized transcript. Those times are useful when subtitles
+should reflect what was spoken, but this is not the same as forcing a supplied
+approved script onto the audio. For exact-script narration captions, prefer
+timestamps returned by the TTS synthesis request or run `elevenlabs_forced_alignment`
+on the existing audio and supplied transcript. Do not replace a failed strict
+alignment request with segment timing.
+
+The `subtitle_gen` tool consumes word timings in this shape:
 
 ```
 word_timestamps: [

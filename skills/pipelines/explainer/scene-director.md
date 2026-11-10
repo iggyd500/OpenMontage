@@ -11,6 +11,7 @@ This is where words become visuals. A great script with a bad scene plan produce
 | Layer | Resource | Purpose |
 |-------|----------|---------|
 | Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
+| Visual-brief schema | `schemas/artifacts/scene_visual_briefs.schema.json` | Narration-grounded stock-search and visual-treatment brief for every scene |
 | Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | Script sections and proposal packet |
 | Playbook | Active style playbook | Visual language, transitions, motion rules |
 | Layer 3 | `.agents/skills/flux-best-practices/`, `.agents/skills/beautiful-mermaid/`, `.agents/skills/manim-composer/` | Image gen, diagram, animation knowledge |
@@ -24,6 +25,25 @@ Read every section. For each, note:
 - What enhancement cues did the script writer embed?
 - What's the emotional beat? (curiosity, revelation, emphasis, humor, conclusion)
 - How much time is available? (end_seconds - start_seconds)
+
+### Step 1b: Create Scene Visual Briefs
+
+Produce a companion `scene_visual_briefs` artifact with exactly one entry for
+every scene ID. Use each scene's `script_section_id` and time range to attach
+the relevant narration (split the section text only when the script provides
+timed subsections). Read the scene plan, script, enhancement cues, and existing
+visual prompts together. Use `text_generation` for a draft when useful; Codex
+owns final interpretation, fact/context checks, artifact writing, and schema
+validation.
+
+Each entry must include the narration, main subject, visual message, concrete
+objects and people, setting, desired action, mood, suggested footage type,
+2–5 concrete search phrases, exclusions, preferred media approach, and fallback
+media. Search phrases describe visible content (for example, "doctor examining
+medical scans"), never an abstract topic label like "AI technology". Do not
+invent a person, location, device, or action that contradicts the narration.
+Mark motion graphics as preferred when stock footage would be misleading or
+when exact data/text needs to be shown.
 
 ### Step 2: Research Visual Approaches
 
@@ -238,9 +258,10 @@ If any dimension scores below 3, revise.
 
 ### Step 8: Submit
 
-Validate `scene_plan_json` against the canonical scene-plan schema, persist it
-through the checkpoint protocol, and attach the stage review. There is no
-separate explainer submit function.
+Validate `scene_plan_json` and `scene_visual_briefs` against their canonical
+schemas. Confirm every scene has exactly one brief and each brief's scene ID
+exists in the plan. Persist both artifacts through the checkpoint protocol and
+attach the stage review. There is no separate explainer submit function.
 
 ## Common Pitfalls
 

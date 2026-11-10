@@ -23,6 +23,7 @@ Agent reads pipeline manifest (YAML) → reads stage director skill (MD)
 - **Agent guide & contract:** `AGENT_GUIDE.md` (tool inventory, pipeline selection, stage agents, protocols)
 - **Skill index:** `skills/INDEX.md`
 - **Tool registry:** `tools/tool_registry.py`
+- **Configured text generation:** `tools/text_generation.py` (`config.llm.provider` selects Gemini or Ollama; no automatic fallback)
 - **Pipeline manifests:** `pipeline_defs/`
 - **Artifact schemas:** `schemas/artifacts/`
 - **Style playbooks:** `styles/*.yaml` (schema: `schemas/styles/playbook.schema.json`)
@@ -48,6 +49,7 @@ Each tool's `agent_skills[]` field bridges Layer 1 → Layer 3. See `skills/INDE
 - **Capability-first tool design:** Each major family should expose a selector tool plus explicit provider tools
   - Example: `tts_selector` + `elevenlabs_tts` / `google_tts` / `openai_tts` / `piper_tts`
   - Example: `video_selector` + `heygen_video` / `wan_video` / `hunyuan_video` / `ltx_video_local` / `ltx_video_modal` / `cogvideo_video`
+- **Configured text drafting:** `text_generation` is one BaseTool with a config-selected Gemini or Ollama backend. Codex remains the orchestrator and owns final artifacts and checkpoints.
 - **Style playbooks:** YAML defining visual language, typography, motion, audio, asset generation constraints
 - **Artifacts are canonical:** `brief`, `script`, `scene_plan`, `asset_manifest`, `edit_decisions`, `render_report`, `publish_log`
 - **Every tool inherits from `tools/base_tool.py`** (ToolContract)
@@ -68,6 +70,7 @@ Each tool's `agent_skills[]` field bridges Layer 1 → Layer 3. See `skills/INDE
 | `styles/playbook_loader.py` | Style playbook loader + validator + design intelligence (color/type/a11y) |
 | `tools/base_tool.py` | ToolContract base class |
 | `tools/tool_registry.py` | Tool discovery and reporting |
+| `tools/text_generation.py` | Shared Gemini/Ollama text drafting capability |
 | `tools/cost_tracker.py` | Budget governance |
 | `tools/video/video_stitch.py` | Multi-clip assembly (stitch, spatial, validate, preview) |
 | `tools/video/video_compose.py` | Runtime-aware composition orchestrator — routes to Remotion / HyperFrames / FFmpeg based on `edit_decisions.render_runtime` |

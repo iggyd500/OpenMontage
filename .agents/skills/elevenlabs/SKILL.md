@@ -14,20 +14,27 @@ Do not send those models to the legacy text-to-speech endpoint.
 
 ## OpenMontage provider routing
 
-Inspect the OpenMontage registry before choosing an authentication path.
+Inspect the OpenMontage registry before choosing an authentication path. Honor
+the user's explicit route: `preferred_tool="elevenlabs_tts"` selects the direct
+ElevenLabs integration, and `preferred_tool="fal_elevenlabs_tts"` selects the
+fal.ai-hosted alternative. Never replace a selected provider after an error.
 
-- Prefer `fal_elevenlabs_tts` when it is available. It provides Eleven v3,
-  Multilingual v2, and Turbo v2.5 through the centrally managed fal.ai
-  connection; no separate ElevenLabs credential is needed.
-- Use `elevenlabs_tts` only when that direct provider is already reported as
-  available by the registry.
+- Direct ElevenLabs uses the centrally configured `ELEVENLABS_API_KEY`.
+- OpenMontage's configured default is direct `elevenlabs_tts`, using
+  `eleven_multilingual_v2` with Brian (`nPczCjzI2devNBz1zQrb`). The configured
+  `wav_44100` output requests standard MP3 44.1 kHz and converts it locally to
+  PCM WAV, avoiding the provider's Pro-tier native 44.1 kHz PCM/WAV format.
+- `fal_elevenlabs_tts` remains available through the centrally managed fal.ai
+  connection; it does not use the direct ElevenLabs credential.
+- Piper remains the local offline option. Google TTS remains available through
+  its existing Google credentials.
 - In a shared installation, never tell the user to create a `.env`, export a
   key, or paste a credential. Report missing direct-provider access as an
   administrator setup request.
 
 The direct API examples below require a centrally configured
-`ELEVENLABS_API_KEY`; they are not the default path when the fal.ai provider is
-available.
+`ELEVENLABS_API_KEY`. Use OpenMontage's registered `tts_selector` for
+production; do not instantiate a second SDK client architecture.
 
 ## Text-to-Speech
 
@@ -40,7 +47,7 @@ client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
 audio = client.text_to_speech.convert(
     text="Welcome to my video!",
-    voice_id="JBFqnCBsd6RMkjVDRZzb",
+    voice_id="nPczCjzI2devNBz1zQrb",  # Brian, OpenMontage default
     model_id="eleven_multilingual_v2",
     voice_settings=VoiceSettings(
         stability=0.5,
@@ -61,7 +68,22 @@ save(audio, "voiceover.mp3")
 | `eleven_turbo_v2_5` | Good | `<break>`, `<phoneme>` | Fastest latency |
 | `eleven_v3` | Most expressive | None | Alpha — unreliable, needs prompt engineering |
 
-**Choose:** multilingual_v2 for reliability, flash/turbo for SSML control, v3 for maximum expressiveness (expect retakes).
+**Choose:** `eleven_flash_v2_5` for short-form narration where speed and cost
+matter; `eleven_multilingual_v2` for longer documentary narration and stable
+paragraph-to-paragraph delivery. `eleven_v3` is expressive but has shorter
+inputs and no request stitching, so it is a poor default for long narration.
+Keep the conservative 2,000-character ceiling for v4 until its alternate
+transport is independently validated. Character caps are per request; split
+long scripts at natural section boundaries.
+
+### Production selection and voice approval
+
+Use `tts_selector` with `preferred_tool="elevenlabs_tts"` when direct access is
+chosen. Keep the same voice ID, model, stability, similarity, style, speed, and
+speaker-boost setting for every section. Generate one representative voice
+sample first, play it to the user, and get human approval before generating the
+full narration batch. Piper and Google TTS remain selectable alternatives; the
+selector does not silently switch providers after a failure.
 
 ### Voice Settings by Style
 
@@ -286,19 +308,20 @@ export const sceneDurations = manifest.scenes.reduce((acc, scene) => {
 // <Series.Sequence durationInFrames={sceneDurations.title}>
 ```
 
-### Word-Level Timings (direct `elevenlabs_tts`)
+### Word-Level Timings (through `tts_selector`)
 
 When captions, word-synced headlines or animation cues must follow the real
-speech, pass `with_timestamps: true` to the direct `elevenlabs_tts` tool instead
-of transcribing the audio afterwards:
+speech, pass `timestamps: true` to `tts_selector` (it maps this to the direct
+tool's `with_timestamps` option) instead of transcribing the audio afterwards:
 
 ```python
-result = ElevenLabsTTS().execute({
+result = tts_selector.execute({
     "text": paragraph,
+    "preferred_tool": "elevenlabs_tts",
     "voice_id": voice_id,
     "previous_text": prev_paragraph,   # continuity across separately synthesized paragraphs
     "next_text": next_paragraph,
-    "with_timestamps": True,
+    "timestamps": True,
     "output_path": "projects/<id>/assets/audio/tts/para_03.mp3",
 })
 result.data["word_timestamps"]   # [{"word": "Доверие.", "start": 0.12, "end": 0.71}, ...]
@@ -417,6 +440,7 @@ The `/generate-voiceover` command handles the full workflow:
 
 ## Popular Voices
 
+- Brian: `nPczCjzI2devNBz1zQrb` (OpenMontage preferred narrator)
 - George: `JBFqnCBsd6RMkjVDRZzb` (warm narrator)
 - Rachel: `21m00Tcm4TlvDq8ikWAM` (clear female)
 - Adam: `pNInz6obpgDQGcFmaJgB` (professional male)

@@ -255,13 +255,16 @@ def sample_artifact(name: str) -> dict:
 class TestConfig:
     def test_load_defaults(self):
         config = OpenMontageConfig()
-        assert config.llm.provider == "anthropic"
+        assert config.llm.provider == "gemini"
+        assert config.llm.model == "gemini-3.5-flash-lite"
         assert config.budget.mode.value == "warn"
         assert config.checkpoint.policy.value == "guided"
 
     def test_load_from_yaml(self):
         config = OpenMontageConfig.load()
         assert config.budget.total_usd == 10.0
+        assert config.llm.provider == "gemini"
+        assert config.llm.model == "gemini-3.5-flash-lite"
 
 
 # ---- Schemas ----

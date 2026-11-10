@@ -65,7 +65,7 @@ stages:
     skill: pipelines/explainer/research-director
     produces:
       - research_brief
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: false
     human_approval_default: false
     review_focus:
@@ -123,7 +123,7 @@ stages:
       - research_brief
     produces:
       - script
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -145,7 +145,8 @@ stages:
       - proposal_packet
     produces:
       - scene_plan
-    tools_available: []
+      - scene_visual_briefs
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -153,22 +154,30 @@ stages:
       - "Visual variety: no 3+ consecutive scenes of same type"
       - Asset feasibility - every required_asset uses a tool from the production plan
       - Playbook adherence - transitions, colors, pacing rules
+      - Every scene has a narration-grounded structured visual brief with concrete search keywords
     success_criteria:
       - Schema-valid scene_plan with required_assets per scene
+      - Schema-valid scene_visual_briefs with one entry per scene
       - At least 3 different scene types used
 
   - name: assets
     skill: pipelines/explainer/asset-director
     required_artifacts_in:
       - scene_plan
+      - scene_visual_briefs
       - script
     optional_artifacts_in:
       - proposal_packet
     produces:
       - asset_manifest
+      - footage_selection_plan
     required_tools:
       - tts_selector
       - image_selector
+      - stock_candidate_search
+      - stock_candidate_ranker
+      - stock_candidate_preview
+      - stock_candidate_download
     optional_tools:
       - video_selector
       - math_animate
@@ -176,9 +185,14 @@ stages:
       - code_snippet
       - music_gen
     tools_available:
+      - text_generation
       - tts_selector
       - image_selector
       - video_selector
+      - stock_candidate_search
+      - stock_candidate_ranker
+      - stock_candidate_preview
+      - stock_candidate_download
       - diagram_gen
       - code_snippet
       - music_gen
@@ -187,12 +201,15 @@ stages:
     human_approval_default: true
     review_focus:
       - All asset files exist on disk
+      - Every stock-selected scene has a recorded candidate ranking, visual review, and selection rationale
+      - Unfilled scenes are explicitly reported rather than assigned weak footage
       - Narration covers all script sections
       - Narration assets apply the approved voice performance plan and sample settings
       - Total cost within approved budget from proposal_packet
       - Image style consistency across all generated visuals
     success_criteria:
       - Schema-valid asset_manifest with all required assets generated
+      - Schema-valid footage_selection_plan with candidates, rejections, and selection status per scene
       - All file paths resolve to existing files
 
   - name: edit
@@ -200,20 +217,29 @@ stages:
     required_artifacts_in:
       - scene_plan
       - asset_manifest
+      - footage_selection_plan
     optional_artifacts_in:
       - script
     produces:
       - edit_decisions
-    tools_available: []
+      - composition_plan
+    required_tools:
+      - composition_quality
+    tools_available:
+      - composition_quality
     checkpoint_required: true
-    human_approval_default: false
+    human_approval_default: true
     review_focus:
       - All cuts reference valid assets from manifest
       - Subtitles enabled with playbook-compatible styling
       - Music configured with ducking parameters
       - No timeline gaps or overlaps
+      - Per-scene crop, subject safety, graphic placement, pacing, and visual continuity
+      - Every technical warning is resolved or explicitly presented for human review
     success_criteria:
       - Schema-valid edit_decisions
+      - Schema-valid composition_plan with per-scene crop, movement, graphics, transition, and quality notes
+      - composition_quality reports no blocking technical issues before composition review
       - Full video duration covered
 
   - name: compose
@@ -221,6 +247,7 @@ stages:
     required_artifacts_in:
       - edit_decisions
       - asset_manifest
+      - composition_plan
     optional_artifacts_in:
       - scene_plan
     produces:
@@ -236,11 +263,16 @@ stages:
       - hyperframes_compose
       - video_stitch
       - audio_mixer
+      - subtitle_gen
+      - elevenlabs_forced_alignment
+      - transcriber
+      - composition_quality
     checkpoint_required: true
-    human_approval_default: false
+    human_approval_default: true
     review_focus:
       - Output video exists and is playable
       - "Duration within +/-5% of target"
+      - Composition plan has been reviewed and crop/graphic warnings resolved or explicitly accepted
       - Audio is clear with proper narration/music balance
       - "render_runtime in edit_decisions matches proposal_packet — silent swap to another runtime is a CRITICAL governance violation"
       - "If render_runtime='hyperframes': `hyperframes lint` and `hyperframes validate` must pass before render"

@@ -89,3 +89,48 @@ def test_compose_target_override_cover(tmp_path):
     )
     assert r.success, r.error
     assert _dims(out) == (720, 1280)
+
+
+def test_remotion_render_accepts_low_memory_concurrency(tmp_path, monkeypatch):
+    """The registered Remotion path can be constrained for low-memory hosts."""
+    tool = VideoCompose()
+    captured = {}
+    monkeypatch.setattr(tool, "_stage_remotion_media", lambda props, public_dir: 0)
+
+    def fake_run_command(cmd, **kwargs):
+        captured["cmd"] = cmd
+        Path(cmd[5]).write_bytes(b"rendered")
+
+    monkeypatch.setattr(tool, "run_command", fake_run_command)
+    result = tool.execute(
+        {
+            "operation": "remotion_render",
+            "composition_data": {
+                "renderer_family": "explainer-data",
+                "cuts": [{"id": "c1", "source": "missing.mp4", "in_seconds": 0, "out_seconds": 1}],
+            },
+            "output_path": str(tmp_path / "low-memory.mp4"),
+            "remotion_concurrency": 1,
+        }
+    )
+
+    assert result.success, result.error
+    assert "--concurrency=1" in captured["cmd"]
+
+
+def test_remotion_render_rejects_invalid_concurrency(tmp_path, monkeypatch):
+    """Invalid concurrency values fail before starting the renderer."""
+    tool = VideoCompose()
+    monkeypatch.setattr(tool, "_stage_remotion_media", lambda props, public_dir: 0)
+    monkeypatch.setattr(tool, "run_command", lambda *args, **kwargs: pytest.fail("renderer should not start"))
+    result = tool.execute(
+        {
+            "operation": "remotion_render",
+            "composition_data": {"renderer_family": "explainer-data", "cuts": []},
+            "output_path": str(tmp_path / "invalid.mp4"),
+            "remotion_concurrency": 0,
+        }
+    )
+
+    assert not result.success
+    assert "positive integer" in result.error

@@ -405,6 +405,10 @@ class ToolRegistry:
         if hf is not None:
             hf_info = hf.get_info()
             rc = hf_info.get("hyperframes_runtime") or {}
+            if not rc.get("diagnostics_checked", False):
+                runtime_warnings.append(
+                    "hyperframes: npm package and CLI diagnostics were not run during offline preflight; run the explicit doctor operation to check them."
+                )
             for reason in rc.get("reasons") or []:
                 runtime_warnings.append(f"hyperframes: {reason}")
 

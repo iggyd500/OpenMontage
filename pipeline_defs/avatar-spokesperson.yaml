@@ -68,6 +68,7 @@ stages:
     optional_tools:
       - transcriber
     tools_available:
+      - text_generation
       - transcriber
     checkpoint_required: true
     human_approval_default: true
@@ -87,7 +88,7 @@ stages:
       - brief
     produces:
       - scene_plan
-    tools_available: []
+    tools_available: [text_generation]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -117,6 +118,7 @@ stages:
       - audio_enhance
       - video_selector
     tools_available:
+      - text_generation
       - heygen_avatar
       - talking_head
       - lip_sync
